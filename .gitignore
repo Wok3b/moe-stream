@@ -1,0 +1,16 @@
+# nested upstream clone — we track our changes as patches/ instead
+llama.cpp/
+# weights never live here (see C:\models)
+*.gguf
+*.safetensors
+# build / scratch
+build/
+target/
+__pycache__/
+*.log
+*.err
+# keep results/ (small CSV/JSON) tracked
+# raw traces are reproducible with tools/moe-trace
+bench/results/*.bin
+bench/results/*.bin.txt
+bench/corpus.txt

@@ -1,0 +1,12 @@
+﻿{
+    "date":  "2026-09-17T23:54:18",
+    "machine":  "Dell Inc. Vostro 15 3530",
+    "os":  "Microsoft Windows 11 Pro 10.0.26200",
+    "cpu":  "13th Gen Intel(R) Core(TM) i5-1334U",
+    "cores":  10,
+    "threads":  12,
+    "ram_gb":  15.7,
+    "ram":  "8GB@3200+8GB@3200",
+    "disk":  "NVMe BM9C1 Samsung 512GB (NVMe)",
+    "llama_cpp":  "972d231"
+}

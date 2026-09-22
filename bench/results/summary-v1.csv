@@ -1,0 +1,9 @@
+﻿time,tag,model,threads,load_mode,lazy_mode,test,avg_ts,stddev_ts,run_s,disk_read_MB,pages_in_MB,avail_before_MB,avail_after_MB,json
+20260918-000526,avail6g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,pp256,50.93,1.97,30,1076,1076,6119,6635,20260918-000526-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail6g.json
+20260918-000526,avail6g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,tg64,18.56,1.10,30,1076,1076,6119,6635,20260918-000526-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail6g.json
+20260918-000606,avail3g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,pp256,49.52,6.37,62,7092,6989,3069,5214,20260918-000606-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail3g.json
+20260918-000606,avail3g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,tg64,19.09,0.77,62,7092,6989,3069,5214,20260918-000606-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail3g.json
+20260918-000718,avail2g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,pp256,21.48,0.81,111,16634,16582,2004,2948,20260918-000718-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail2g.json
+20260918-000718,avail2g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,tg64,8.50,1.43,111,16634,16582,2004,2948,20260918-000718-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail2g.json
+20260918-000921,avail1.5g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,pp256,15.38,0.35,163,23951,23403,1459,2257,20260918-000921-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail1.5g.json
+20260918-000921,avail1.5g,OLMoE-1B-7B-0924-Instruct-Q4_K_M,10,mmap,auto,tg64,3.65,1.58,163,23951,23403,1459,2257,20260918-000921-OLMoE-1B-7B-0924-Instruct-Q4_K_M-t10-mmap-lazyauto-avail1.5g.json

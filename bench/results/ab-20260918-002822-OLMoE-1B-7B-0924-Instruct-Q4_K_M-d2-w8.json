@@ -1,0 +1,1 @@
+{"n_prompt": 56, "prefill_s": 13.6954, "n_gen": 48, "gen_s": 18.5212, "gen_tps": 2.5916, "faults_per_token": 13825.2, "prefetch_depth": 2, "prefetch_width": 8, "prefetch_mb_per_token": 877.26, "hit_rate": 0.8472, "predict_ms_per_token": 243.108}

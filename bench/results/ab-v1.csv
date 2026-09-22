@@ -1,0 +1,5 @@
+﻿time,tag,model,avail_gb,depth,width,gen_tps,faults_per_token,prefetch_mb_per_token,hit_rate,predict_ms_per_token,disk_read_MB,extra
+20260918-002711,v1,OLMoE-1B-7B-0924-Instruct-Q4_K_M,2,0,8,2.428,23101,0.0,0.0000,0.00,8236,
+20260918-002748,v1,OLMoE-1B-7B-0924-Instruct-Q4_K_M,2,1,8,2.956,18907,455.0,0.8472,169.12,8610,
+20260918-002822,v1,OLMoE-1B-7B-0924-Instruct-Q4_K_M,2,2,8,2.592,13825,877.3,0.8472,243.11,7916,
+20260918-002856,v1,OLMoE-1B-7B-0924-Instruct-Q4_K_M,2,3,8,2.106,12361,1271.3,0.8472,331.71,8590,

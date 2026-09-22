@@ -1,0 +1,8 @@
+﻿time,tag,model,text,ctx,chunks,k,ppl,ppl_err,seconds
+20260918-021414,wikitext2,OLMoE-1B-7B-0924-Instruct-Q4_K_M,wiki.test.raw,512,80,8,11.4426,0.23050,550
+20260918-022324,wikitext2,OLMoE-1B-7B-0924-Instruct-Q4_K_M,wiki.test.raw,512,80,6,12.4971,0.26082,459
+20260918-023103,wikitext2,OLMoE-1B-7B-0924-Instruct-Q4_K_M,wiki.test.raw,512,80,4,16.1703,0.36424,358
+20260918-0150,gitdoc,OLMoE-1B-7B-0924-Instruct-Q4_K_M,corpus.txt,512,40,8,4.8525,0.11278,223
+20260918-0150,gitdoc,OLMoE-1B-7B-0924-Instruct-Q4_K_M,corpus.txt,512,40,6,5.4425,0.135,249
+20260918-0150,gitdoc,OLMoE-1B-7B-0924-Instruct-Q4_K_M,corpus.txt,512,40,4,9.0789,0.26104,165
+20260918-0150,gitdoc,OLMoE-1B-7B-0924-Instruct-Q4_K_M,corpus.txt,512,40,2,48.5258,1.85293,128

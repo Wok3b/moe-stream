@@ -1,0 +1,17 @@
+diff --git a/src/llama-model-loader.cpp b/src/llama-model-loader.cpp
+index 43c396f..1aa7a68 100644
+--- a/src/llama-model-loader.cpp
++++ b/src/llama-model-loader.cpp
+@@ -1339,6 +1339,12 @@ struct ggml_tensor * llama_model_loader::create_tensor(
+         return NULL;
+     }
+ 
++    // moe-stream: with --lazy-mode on, MoE expert tensors stay on disk and are streamed on demand
++    // (no load-time prefetch), see tools/moe-run for the predictive prefetch that pairs with this
++    if (lazy.mode == LLAMA_LAZY_MODE_ON && tn.str().find("_exps.weight") != std::string::npos) {
++        flags |= TENSOR_READ_LAZY;
++    }
++
+     if (flags & TENSOR_READ_LAZY) {
+         // the decision must not depend on the load mode, or the memory-fit pass (no_alloc, no mmap)
+         is_lazy = lazy.add(tn.str(), cur, no_alloc ? nullptr : &require_weight(tn.str().c_str()));
