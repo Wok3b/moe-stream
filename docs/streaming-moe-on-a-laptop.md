@@ -252,10 +252,12 @@ source of noise in these measurements.
 
 With the faults gone, the accounting is simple. At 32 slots the cache recorded
 97 hits, 22 late hits (the prefetch was in flight and the main thread waited)
-and 8 misses per token, reading 191 MB per token and blocking the main thread
-for about 280 ms. 191 MB at the roughly 600 MB/s the drive was then sustaining
-is 280 ms. The path is purely bandwidth-bound. Nothing about faults or policy
-is left to fix; what is left is bytes and bandwidth.
+and 8 misses per token, reading 191.3 MB per token and blocking the main thread
+for 273 to 283 ms. Each of the two I/O threads was moving about 295 MB/s, so
+reading those 191.3 MB kept the drive busy for roughly 330 ms, and the token
+took 343 ms. Essentially the whole token is the drive. The path is purely
+bandwidth-bound, and nothing about faults or cache policy is left to fix; what
+is left is bytes and bandwidth.
 
 ## One read instead of three
 

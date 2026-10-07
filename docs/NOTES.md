@@ -357,9 +357,17 @@ whole model fit — the "available" knob is only approximately a budget, and it
 favours the page-cache side, whose standby list can grow into memory freed
 from other processes while our locked cache cannot.)
 
-Per token at 32 slots: 108 hits, 11 late hits, 8 misses, 40 prefetched,
-185 MB read, main thread waits ~290 ms -> the cache path is purely
-bandwidth-bound: 185 MB / 0.65 GB/s = 285 ms. Page faults are gone.
+Per token at 32 slots, from the two logged runs (`ab-20260918-013008` and
+`ab-20260918-013149`): 97.2 and 97.8 hits, 22.7 and 22.2 late hits, 8.2 misses,
+41.9 prefetched, 39.4 evictions, 191.3 MB read, main thread blocked 283 and
+273 ms. Each of the two I/O threads moved 291 and 299 MB/s, so the drive was
+busy for roughly 330 ms of a 343 ms token. The cache path is purely
+bandwidth-bound and page faults are gone.
+
+(An earlier draft of this paragraph quoted 108 hits, 11 late hits, 185 MB and
+~290 ms. Those were from an unlogged run during development; the figures above
+are the ones in `bench/results/`, and they are what the article and the charts
+use.)
 
 **What that means.** With the I/O owned, tok/s = bytes per token / sustained
 bandwidth, overlapped with compute. The remaining levers are all about bytes

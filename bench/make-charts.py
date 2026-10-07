@@ -81,9 +81,15 @@ def read_csv(path):
         return list(csv.DictReader(f))
 
 
-def save(fig, out, name):
+# figures meant to sit side by side in the README render on this exact canvas,
+# so they come out the same size; everything else is cropped to its content
+PAIR_SIZE = (5.8, 3.6)
+PAIR_MARGINS = {"left": 0.125, "right": 0.975, "top": 0.885, "bottom": 0.215}
+
+
+def save(fig, out, name, tight=True):
     path = os.path.join(out, name)
-    fig.savefig(path)
+    fig.savefig(path, bbox_inches="tight" if tight else None)
     plt.close(fig)
     print("wrote", path)
     return path
@@ -278,7 +284,8 @@ def fig_router(res, out):
               ("recall_2k", S2, "recall, %d experts fetched" % (2 * k)),
               ("recall_4k", S3, "recall, %d experts fetched" % (4 * k))]
 
-    fig, ax = plt.subplots(figsize=(5.9, 3.4))
+    fig, ax = plt.subplots(figsize=PAIR_SIZE)
+    fig.subplots_adjust(**PAIR_MARGINS)
     for key, color, name in series:
         y = [sr[str(i)][key] for i in ks]
         ax.plot(ks, y, color=color, linewidth=2, marker="o", markersize=5, label=name)
@@ -294,10 +301,10 @@ def fig_router(res, out):
     ax.set_ylim(0.6, 1.03)
     grid_y(ax)
     ax.legend(loc="lower left")
-    fig.text(0.5, -0.03, "%s, %d layers, %d experts, top-%d, %d sampled decode tokens"
+    fig.text(0.5, 0.045, "%s, %d layers, %d experts, top-%d, %d sampled decode tokens"
              % (d["arch"], d["n_layer"], d["n_expert"], k, d["n_tokens"]),
-             ha="center", fontsize=7.5, color=INK2)
-    return save(fig, out, "fig4-stale-router.png")
+             ha="center", va="bottom", fontsize=7.5, color=INK2)
+    return save(fig, out, "fig4-stale-router.png", tight=False)
 
 
 def fig_popularity(res, out):
@@ -384,7 +391,8 @@ def fig_ppl(res, out):
     """Quality cost of routing to fewer experts."""
     rows = read_csv(os.path.join(res, "ppl.csv"))
     corpora = (("wikitext2", S1, "wikitext-2 test"), ("gitdoc", S2, "technical prose"))
-    fig, ax = plt.subplots(figsize=(5.7, 3.4))
+    fig, ax = plt.subplots(figsize=PAIR_SIZE)
+    fig.subplots_adjust(**PAIR_MARGINS)
     for tag, color, name in corpora:
         rr = sorted((int(r["k"]), float(r["ppl"]), float(r["ppl_err"]))
                     for r in rows if r["tag"] == tag and int(r["k"]) >= 4)
@@ -407,9 +415,9 @@ def fig_ppl(res, out):
     ax.legend(loc="upper left")
     note = "native K is 8; lower K set with --override-kv, no retraining"
     if k2:
-        note += ". K=2 on technical prose reaches %.1f, off this scale" % k2[0]
-    fig.text(0.5, -0.03, note, ha="center", fontsize=7.5, color=INK2)
-    return save(fig, out, "fig7-ppl-vs-k.png")
+        note += "\nK=2 on technical prose reaches %.1f, off this scale" % k2[0]
+    fig.text(0.5, 0.045, note, ha="center", va="bottom", fontsize=7.5, color=INK2)
+    return save(fig, out, "fig7-ppl-vs-k.png", tight=False)
 
 
 def fig_layout(res, out):
