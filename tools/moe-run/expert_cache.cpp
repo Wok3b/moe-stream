@@ -1,4 +1,5 @@
 #include "expert_cache.h"
+#include "expert_bundle.h"
 
 #include "ggml-alloc.h"
 #include "gguf.h"
@@ -93,6 +94,7 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
             ts.file_off         = data_off + gguf_get_tensor_offset(gctx, id);
             ts.bytes_per_expert = srcs[i]->nb[2];
             max_chunk = std::max(max_chunk, ts.bytes_per_expert);
+            max_read  = std::max(max_read,  ts.bytes_per_expert);
             layers[il].tensors.push_back(ts);
             n_tensors++;
         }
@@ -146,6 +148,14 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
     }
 #endif
 
+    if (!p.bundle.empty()) {
+        if (!init_bundle(p.bundle)) {
+            return false;
+        }
+        path    = p.bundle; // the I/O threads read whole bundles from here instead
+        bundled = true;
+    }
+
     for (auto & L : layers) {
         for (auto & ts : L.tensors) {
             llama_expert_cache_register(ts.orig, ts.cache, p.max_tokens);
@@ -155,8 +165,83 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
     for (int i = 0; i < p.io_threads; ++i) {
         threads.emplace_back([this] { io_loop(); });
     }
-    LOG_INF("expert_cache: %d slots/layer x %d tensors, %zu MiB locked, %d I/O threads, chunk %zu KiB\n",
-            p.slots, n_tensors, bytes_total >> 20, p.io_threads, max_chunk >> 10);
+    LOG_INF("expert_cache: %d slots/layer x %d tensors, %zu MiB locked, %d I/O threads, %s layout, request %zu KiB\n",
+            p.slots, n_tensors, bytes_total >> 20, p.io_threads,
+            bundled ? "bundled" : "split", max_read >> 10);
+    return true;
+}
+
+// Read the sidecar header and adopt its offsets. Everything is checked against
+// the expert tensors found in the GGUF: a sidecar built for another model, a
+// different quant or a different tensor order is rejected rather than served
+// as garbage.
+bool expert_cache::init_bundle(const std::string & bundle_path) {
+    FILE * f = fopen(bundle_path.c_str(), "rb");
+    if (!f) {
+        LOG_ERR("expert_cache: cannot open the expert sidecar %s\n", bundle_path.c_str());
+        return false;
+    }
+    expert_bundle_header h;
+    if (fread(&h, sizeof(h), 1, f) != 1 || memcmp(h.magic, EXPERT_BUNDLE_MAGIC, 8) != 0) {
+        LOG_ERR("expert_cache: %s is not an expert sidecar\n", bundle_path.c_str());
+        fclose(f);
+        return false;
+    }
+    if (h.version != EXPERT_BUNDLE_VERSION || h.n_chunk_max != EXPERT_BUNDLE_MAX_CHUNK) {
+        LOG_ERR("expert_cache: sidecar version %u is not supported\n", h.version);
+        fclose(f);
+        return false;
+    }
+    if ((int) h.n_expert != n_expert) {
+        LOG_ERR("expert_cache: sidecar has %u experts, the model has %d\n", h.n_expert, n_expert);
+        fclose(f);
+        return false;
+    }
+    std::vector<expert_bundle_layer> recs(h.n_layer);
+    if (h.n_layer && fread(recs.data(), sizeof(expert_bundle_layer), recs.size(), f) != recs.size()) {
+        LOG_ERR("expert_cache: short read in the sidecar header\n");
+        fclose(f);
+        return false;
+    }
+    fclose(f);
+
+    int matched = 0;
+    for (const auto & r : recs) {
+        if (r.il >= layers.size()) {
+            LOG_ERR("expert_cache: sidecar names layer %u, the model has %zu\n", r.il, layers.size());
+            return false;
+        }
+        auto & L = layers[r.il];
+        if (L.tensors.empty()) {
+            continue;
+        }
+        if (r.n_chunk != L.tensors.size()) {
+            LOG_ERR("expert_cache: layer %u has %zu expert tensors, the sidecar has %u\n",
+                    r.il, L.tensors.size(), r.n_chunk);
+            return false;
+        }
+        for (size_t i = 0; i < L.tensors.size(); ++i) {
+            if (strcmp(r.chunk[i].name, ggml_get_name(L.tensors[i].orig)) != 0 ||
+                r.chunk[i].bytes != L.tensors[i].bytes_per_expert) {
+                LOG_ERR("expert_cache: sidecar chunk %zu of layer %u is %s (%llu bytes), expected %s (%zu bytes)\n",
+                        i, r.il, r.chunk[i].name, (unsigned long long) r.chunk[i].bytes,
+                        ggml_get_name(L.tensors[i].orig), L.tensors[i].bytes_per_expert);
+                return false;
+            }
+        }
+        L.b_base   = r.base;
+        L.b_stride = r.stride;
+        max_read   = std::max(max_read, (size_t) r.stride);
+        matched++;
+    }
+    for (size_t il = 0; il < layers.size(); ++il) {
+        if (!layers[il].tensors.empty() && layers[il].b_stride == 0) {
+            LOG_ERR("expert_cache: the sidecar has no bundles for layer %zu\n", il);
+            return false;
+        }
+    }
+    LOG_INF("expert_cache: expert sidecar %s: %d layers, bundle %.2f MiB\n",
+            bundle_path.c_str(), matched, (double) max_read / 1048576.0);
     return true;
 }
 
@@ -261,6 +346,33 @@ void expert_cache::prefetch(int il, const int32_t * experts, int n, uint64_t tok
 
 bool expert_cache::read_expert(void * handle, char * staging, const layer_state & L, int expert, int slot) {
 #ifdef _WIN32
+    if (bundled) {
+        // the whole expert is one aligned, in-bounds range: one request, then
+        // hand the staging buffer out across the slot tensors
+        const uint64_t off = L.b_base + (uint64_t) expert * L.b_stride;
+        LARGE_INTEGER li;
+        li.QuadPart = (LONGLONG) off;
+        if (!SetFilePointerEx(handle, li, nullptr, FILE_BEGIN)) {
+            return false;
+        }
+        DWORD got = 0;
+        const int64_t r0 = now_ns();
+        if (!ReadFile(handle, staging, (DWORD) L.b_stride, &got, nullptr) || got < (DWORD) L.b_stride) {
+            return false;
+        }
+        const int64_t r1 = now_ns();
+        size_t at = 0;
+        for (const auto & ts : L.tensors) {
+            memcpy((char *) ts.cache->data + (size_t) slot * ts.bytes_per_expert, staging + at, ts.bytes_per_expert);
+            at += ts.bytes_per_expert;
+            stats.bytes_read += ts.bytes_per_expert;
+        }
+        const int64_t r2 = now_ns();
+        stats.ns_read += r1 - r0;
+        stats.ns_copy += r2 - r1;
+        stats.n_reads++;
+        return true;
+    }
     for (const auto & ts : L.tensors) {
         const uint64_t off = ts.file_off + (uint64_t) expert * ts.bytes_per_expert;
         const uint64_t a0  = off & ~(uint64_t) (SECTOR - 1);
@@ -281,6 +393,7 @@ bool expert_cache::read_expert(void * handle, char * staging, const layer_state 
         stats.ns_read += r1 - r0;
         stats.ns_copy += r2 - r1;
         stats.bytes_read += ts.bytes_per_expert;
+        stats.n_reads++;
     }
     return true;
 #else
@@ -292,7 +405,7 @@ bool expert_cache::read_expert(void * handle, char * staging, const layer_state 
 void expert_cache::bench(int n) {
 #ifdef _WIN32
     HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, nullptr);
-    char * staging = (char *) VirtualAlloc(nullptr, max_chunk + 2 * SECTOR, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    char * staging = (char *) VirtualAlloc(nullptr, max_read + 2 * SECTOR, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     std::vector<int> moe;
     for (int il = 0; il < (int) layers.size(); ++il) {
         if (!layers[il].tensors.empty()) {
@@ -311,11 +424,14 @@ void expert_cache::bench(int n) {
     }
     const double sec = (now_ns() - t0) / 1e9;
     const double mb  = (stats.bytes_read.load() - b0) / 1e6;
-    LOG_INF("expert_cache: io-bench: %d experts, %.0f MB in %.2fs = %.0f MB/s single thread; ReadFile %.2f ms/chunk, memcpy %.2f ms/chunk, chunk %.2f MB\n",
-            n, mb, sec, mb / sec, stats.ns_read.load() / 1e6 / (3.0 * n), stats.ns_copy.load() / 1e6 / (3.0 * n), mb / (3.0 * n));
+    const double reqs = (double) std::max<long long>(1, stats.n_reads.load());
+    LOG_INF("expert_cache: io-bench: %d experts, %.0f MB in %.2fs = %.0f MB/s single thread; %.2f requests/expert, ReadFile %.2f ms/request, memcpy %.2f ms/request, request %.2f MB\n",
+            n, mb, sec, mb / sec, reqs / n, stats.ns_read.load() / 1e6 / reqs,
+            stats.ns_copy.load() / 1e6 / reqs, mb / reqs);
     stats.bytes_read = b0;
     stats.ns_read = 0;
     stats.ns_copy = 0;
+    stats.n_reads = 0;
 
     // same handle, plain random reads of fixed sizes: is it the chunk geometry or the call?
     LARGE_INTEGER fsz;
@@ -351,7 +467,7 @@ void expert_cache::io_loop() {
         LOG_ERR("expert_cache: cannot open %s for unbuffered reads (error %lu)\n", path.c_str(), GetLastError());
         return;
     }
-    char * staging = (char *) VirtualAlloc(nullptr, max_chunk + 2 * SECTOR, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    char * staging = (char *) VirtualAlloc(nullptr, max_read + 2 * SECTOR, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     for (;;) {
         job j;
         {

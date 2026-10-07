@@ -22,6 +22,7 @@ struct expert_cache_params {
     int  io_threads  = 2;
     int  max_tokens  = 1;    // batches larger than this use the mmap path (prefill)
     bool lock_memory = true; // VirtualLock the cache so the OS cannot page it out under pressure
+    std::string bundle;      // expert-bundled sidecar (expert_bundle.h); empty = read the GGUF
 };
 
 struct expert_cache_stats {
@@ -32,6 +33,7 @@ struct expert_cache_stats {
     std::atomic<long long> evictions{0};
     std::atomic<long long> no_slot{0};    // prefetch skipped: nothing evictable
     std::atomic<long long> bytes_read{0};
+    std::atomic<long long> n_reads{0};    // read requests issued (3 per expert split, 1 bundled)
     std::atomic<long long> ns_wait{0};    // main thread blocked in on_slot_ids
     std::atomic<long long> ns_io{0};      // summed over I/O threads
     std::atomic<long long> ns_read{0};    // inside ReadFile
@@ -67,6 +69,8 @@ private:
     };
     struct layer_state {
         std::vector<tensor_src> tensors;      // up, gate, down (or gate_up, down)
+        uint64_t                b_base   = 0; // bundled layout: expert 0's bundle
+        uint64_t                b_stride = 0; // bundled layout: bytes per expert bundle
         std::vector<int32_t>    slot_expert;  // [slots]  expert in the slot, -1 if free
         std::vector<int32_t>    expert_slot;  // [n_expert] slot of the expert, -1 if absent
         std::vector<uint8_t>    state;        // [slots]
@@ -78,6 +82,7 @@ private:
         int il, expert, slot;
     };
 
+    bool init_bundle(const std::string & bundle_path); // validate the sidecar and take its offsets
     int  alloc_slot(layer_state & L, uint64_t token); // caller holds mu; -1 if nothing evictable
     void submit(int il, int expert, int slot, bool urgent); // caller holds mu; urgent = front of the queue
     void io_loop();
@@ -90,6 +95,8 @@ private:
     ggml_context * ctx = nullptr;
     ggml_backend_buffer_t buf = nullptr;
     size_t max_chunk = 0;
+    size_t max_read  = 0; // largest single request: a chunk, or a whole bundle
+    bool   bundled   = false;
     uint64_t clock = 0;
 
     std::mutex mu;

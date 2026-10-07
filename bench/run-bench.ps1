@@ -22,6 +22,10 @@ param(
     [string]$ExtraArgs = ""
 )
 $ErrorActionPreference = 'Stop'
+# format numbers the same way everywhere: on a machine whose locale uses a
+# decimal comma, -f would emit "6,21" and the comma stripping below would
+# turn it into 621
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 $root   = Split-Path $PSScriptRoot -Parent
 $bench  = Join-Path $root 'llama.cpp\build\bin\Release\llama-bench.exe'
 $outDir = Join-Path $PSScriptRoot 'results'

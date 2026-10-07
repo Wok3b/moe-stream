@@ -18,6 +18,10 @@ param(
     [string]$LazyMode = "auto"
 )
 $ErrorActionPreference = 'Stop'
+# format numbers the same way everywhere: on a machine whose locale uses a
+# decimal comma, -f would emit "6,21" and the comma stripping below would
+# turn it into 621
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 $eater = Join-Path $PSScriptRoot 'ram-eater.py'
 $run   = Join-Path $PSScriptRoot 'run-bench.ps1'
 $modelGB = (Get-Item $Model).Length / 1GB
@@ -32,7 +36,7 @@ foreach ($target in $AvailableGB) {
         "target {0} GB available (model {1:N1} GB -> ~{2:P0} can be resident): pinning {3} GB" -f $target, $modelGB, [math]::Min(1.0, $target / $modelGB), $eatGB
         $eaterOut = Join-Path $env:TEMP 'ram-eater.out'
         Remove-Item $eaterOut -ErrorAction SilentlyContinue
-        $eaterProc = Start-Process python -ArgumentList $eater, $eatGB -RedirectStandardOutput $eaterOut -PassThru -NoNewWindow
+        $eaterProc = Start-Process python -ArgumentList ("`"$eater`""), $eatGB -RedirectStandardOutput $eaterOut -PassThru -NoNewWindow
         $deadline = (Get-Date).AddSeconds(120)
         while (-not (Test-Path $eaterOut) -or -not (Select-String -Path $eaterOut -Pattern '^LOCKED' -Quiet)) {
             if ($eaterProc.HasExited) { Get-Content $eaterOut; throw "ram-eater exited early" }

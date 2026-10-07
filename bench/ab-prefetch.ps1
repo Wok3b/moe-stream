@@ -17,6 +17,10 @@ param(
     [string]$Tag = ""
 )
 $ErrorActionPreference = 'Stop'
+# format numbers the same way everywhere: on a machine whose locale uses a
+# decimal comma, -f would emit "6,21" and the comma stripping below would
+# turn it into 621
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture
 $root = Split-Path $PSScriptRoot -Parent
 $exe  = Join-Path $root 'llama.cpp\build\bin\Release\llama-moe-run.exe'
 $csv  = Join-Path $PSScriptRoot 'results\ab.csv'
@@ -33,7 +37,7 @@ if ($eatGB -gt 0.1) {
     "pinning $eatGB GB to leave $AvailableGB GB available"
     $eaterOut = Join-Path $env:TEMP 'ram-eater.out'
     Remove-Item $eaterOut -ErrorAction SilentlyContinue
-    $eaterProc = Start-Process python -ArgumentList $eater, $eatGB -RedirectStandardOutput $eaterOut -PassThru -NoNewWindow
+    $eaterProc = Start-Process python -ArgumentList ("`"$eater`""), $eatGB -RedirectStandardOutput $eaterOut -PassThru -NoNewWindow
     $null = $eaterProc.Handle
     $deadline = (Get-Date).AddSeconds(120)
     while (-not (Test-Path $eaterOut) -or -not (Select-String -Path $eaterOut -Pattern '^LOCKED' -Quiet)) {

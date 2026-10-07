@@ -11,7 +11,10 @@
 //            [--prefetch-depth D] [--prefetch-width M] [--prefetch-prefill] [--stats] [--no-resident-check]
 //            [--prefetch-threads N] [--touch]
 //            [--cache-slots C] [--io-threads N] [--cache-max-tokens T] [--no-lock]
+//            [--experts-file model.gguf.experts]
 //   --cache-slots > 0 replaces the mmap/page-cache path by an explicit expert cache (expert_cache.h)
+//   --experts-file reads whole experts from a bundled sidecar (llama-moe-bundle): one request
+//            per expert instead of three
 //            [--temp T -s SEED] [--json out.json]
 
 #include "arg.h"
@@ -521,6 +524,8 @@ int main(int argc, char ** argv) {
             cp.max_tokens = atoi(argv[++i]);
         } else if (a == "--no-lock") {
             cp.lock_memory = false;
+        } else if (a == "--experts-file" && i + 1 < argc) {
+            cp.bundle = argv[++i];
         } else if (a == "--io-bench" && i + 1 < argc) {
             io_bench = atoi(argv[++i]);
         } else if (a == "--json" && i + 1 < argc) {
@@ -650,11 +655,14 @@ int main(int argc, char ** argv) {
     if (pf.ec) {
         const auto & cs = ec.stats;
         const double per = n_gen ? 1.0 / n_gen : 0.0;
-        LOG_INF("%s: cache: %zu MiB, per token: hits %.1f, late hits %.1f, misses %.1f, prefetched %.1f, evictions %.1f, no-slot %.1f; "
-                "read %.1f MB/token, wait %.1f ms/token, I/O %.0f MB/s per thread\n",
-                __func__, ec.bytes_total >> 20, cs.hits.load() * per, cs.late_hits.load() * per, cs.misses.load() * per,
+        LOG_INF("%s: cache: %zu MiB, %s layout, per token: hits %.1f, late hits %.1f, misses %.1f, prefetched %.1f, evictions %.1f, no-slot %.1f; "
+                "read %.1f MB/token in %.1f requests (%.2f MB each), wait %.1f ms/token, I/O %.0f MB/s per thread\n",
+                __func__, ec.bytes_total >> 20, cp.bundle.empty() ? "split" : "bundled",
+                cs.hits.load() * per, cs.late_hits.load() * per, cs.misses.load() * per,
                 cs.prefetched.load() * per, cs.evictions.load() * per, cs.no_slot.load() * per,
-                cs.bytes_read.load() / 1e6 * per, cs.ns_wait.load() / 1e6 * per,
+                cs.bytes_read.load() / 1e6 * per, cs.n_reads.load() * per,
+                cs.n_reads.load() ? cs.bytes_read.load() / 1e6 / cs.n_reads.load() : 0.0,
+                cs.ns_wait.load() / 1e6 * per,
                 cs.ns_io.load() ? cs.bytes_read.load() / (cs.ns_io.load() / 1e9) / 1e6 : 0.0);
     }
     for (auto & c : text) { if (c == '\n' || c == '\r') c = ' '; }
@@ -668,7 +676,8 @@ int main(int argc, char ** argv) {
                        "\"issued_mb_per_token\": %.2f, \"skipped_mb_per_token\": %.2f, \"stale_jobs\": %lld, \"worker_ms_per_token\": %.2f, "
                        "\"prefetch_threads\": %d, \"touch\": %d, \"touch_ms_per_token\": %.2f, "
                        "\"cache_slots\": %d, \"cache_hits\": %.2f, \"cache_late_hits\": %.2f, \"cache_misses\": %.2f, "
-                       "\"cache_read_mb_per_token\": %.2f, \"cache_wait_ms_per_token\": %.2f, \"cache_io_mbps\": %.0f}\n",
+                       "\"cache_read_mb_per_token\": %.2f, \"cache_wait_ms_per_token\": %.2f, \"cache_io_mbps\": %.0f, "
+                       "\"cache_reads_per_token\": %.2f, \"cache_layout\": \"%s\"}\n",
                     tokens.size(), prefill_s, n_gen, gen_s, gen_tps, faults_per_token, pf.depth, pf.width,
                     n_gen ? pf.bytes_prefetched / 1e6 / n_gen : 0.0, hit, n_gen ? pf.predict_ms / n_gen : 0.0,
                     n_gen ? wk_mb / n_gen : 0.0, n_gen ? skp_mb / n_gen : 0.0, stale, n_gen ? wk_ms / n_gen : 0.0,
@@ -676,7 +685,9 @@ int main(int argc, char ** argv) {
                     cp.slots, n_gen ? (double) ec.stats.hits.load() / n_gen : 0.0, n_gen ? (double) ec.stats.late_hits.load() / n_gen : 0.0,
                     n_gen ? (double) ec.stats.misses.load() / n_gen : 0.0, n_gen ? ec.stats.bytes_read.load() / 1e6 / n_gen : 0.0,
                     n_gen ? ec.stats.ns_wait.load() / 1e6 / n_gen : 0.0,
-                    ec.stats.ns_io.load() ? ec.stats.bytes_read.load() / (ec.stats.ns_io.load() / 1e9) / 1e6 : 0.0);
+                    ec.stats.ns_io.load() ? ec.stats.bytes_read.load() / (ec.stats.ns_io.load() / 1e9) / 1e6 : 0.0,
+                    n_gen ? (double) ec.stats.n_reads.load() / n_gen : 0.0,
+                    cp.bundle.empty() ? "split" : "bundled");
             fclose(f);
         }
     }

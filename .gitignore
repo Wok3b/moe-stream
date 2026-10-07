@@ -14,3 +14,13 @@ __pycache__/
 bench/results/*.bin
 bench/results/*.bin.txt
 bench/corpus.txt
+
+# model files never live in the repo (see C:\models)
+*.experts
+# editor and local session scratch
+.mcp.json
+HANDOFF*
+NOTES.local.md
+*.session.md
+.vscode/
+.idea/

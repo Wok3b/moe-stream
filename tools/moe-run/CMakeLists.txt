@@ -6,3 +6,8 @@ if (WIN32)
     target_link_libraries(${TARGET} PRIVATE psapi)
 endif()
 target_compile_features(${TARGET} PRIVATE cxx_std_17)
+
+set(TARGET llama-moe-bundle)
+add_executable(${TARGET} moe-bundle.cpp)
+target_link_libraries(${TARGET} PRIVATE llama ${CMAKE_THREAD_LIBS_INIT})
+target_compile_features(${TARGET} PRIVATE cxx_std_17)

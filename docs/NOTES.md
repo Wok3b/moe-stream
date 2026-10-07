@@ -407,6 +407,81 @@ Ranking of bytes-per-token levers by quality cost, so far:
 2. K=6 (+12% for -25%),
 3. K=4 (+87% for -50%) — only with recovery training.
 
+## Results 8 — expert-bundled layout (2026-10-07)
+
+Built (the layout lever from Results 6, item 5):
+
+- `tools/moe-run/expert_bundle.h` — the sidecar format. A GGUF cannot express a
+  bundled layout: every tensor there has to be one contiguous blob and bundling
+  interleaves bytes from three of them. So the bundled copy lives in a sidecar
+  file beside the model; the GGUF is untouched and still loads normally, and
+  only the expert cache reads the sidecar. Bundles are 4096-aligned and the last
+  one is padded to a full stride, so every read is sector aligned and in bounds.
+- `tools/moe-run/moe-bundle.cpp` (`llama-moe-bundle -m model.gguf [--verify]`) —
+  writes it. `--verify` compares every expert byte against the GGUF.
+- `expert_cache` gained `--experts-file`: one `ReadFile` of the whole bundle per
+  expert instead of three. The header is checked against the model (tensor names
+  in cache order, bytes per expert, expert count) and rejected rather than
+  served if anything disagrees.
+
+OLMoE Q4_K_M: 16 layers x 64 experts = 1024 bundles, stride 3.38-3.89 MiB
+(Q4_K_M uses different quant types per layer, so it varies), sidecar 3.63 GiB
+next to the 3.92 GiB GGUF. `--verify` passes.
+
+A/B (`bench/ab-layout.ps1`), interleaved split/bundled, 48 greedy tokens,
+prefetch depth 2, 2 I/O threads, no memory pinning, 3 rounds each:
+
+| cache | layout | tok/s | requests/token | MB/request | MB/s per I/O thread | main thread wait |
+|---|---|---|---|---|---|---|
+| 32 slots (1.86 GiB) | split | 6.30 / 6.24 / 6.21 | 150.3 | 1.27 | 649 | 115 ms/token |
+| 32 slots | **bundled** | **9.73 / 9.33 / 9.49** | **50.1** | **3.82** | **1031** | **62 ms/token** |
+| 16 slots (0.93 GiB) | split | 3.50 / 3.61 / 3.60 | 275.8 | 1.27 | 643 | 229 ms/token |
+| 16 slots | **bundled** | **5.71 / 5.76 / 5.79** | **91.9** | **3.81** | **1049** | **127 ms/token** |
+
+**1.52x at 32 slots, 1.61x at 16.** Token hash `3b15dac0721bfcbf` on all twelve
+runs, so the layout is bit-exact like the cache itself. Bytes per token are
+identical on both sides (191.3 MB at 32 slots, 349.9 MB at 16): the gain is
+entirely the drive doing more with the same bytes, 645 -> 1040 MB/s per I/O
+thread, which tracks the request-size curve in `disk-bench.json` independently.
+
+More than the 20-30% predicted in Results 6. The guess compared 1.27 MB against
+3.8 MB requests at a fixed queue depth; the real pattern is three separate seeks
+per expert interleaving across two I/O threads, which costs more than the size
+difference alone.
+
+**Why these runs are unpinned.** Both layouts read with `FILE_FLAG_NO_BUFFERING`
+and the cache is locked, so neither side depends on the page cache and pinning
+changes nothing about what is being compared. It only adds noise, and on this
+machine it does not work reliably at these cache sizes:
+
+- The one pinned sequence that completed (2.5 GB available, 32 slots, 4 runs,
+  tagged `r8-avail2.5g` in `layout.csv`) read 6.01 split, 4.44 bundled, 2.39
+  split, 3.23 bundled, with per-thread throughput falling 632 -> 474 -> 237 ->
+  330 MB/s as the drive heated. The thermal drift inside one sequence is larger
+  than the effect being measured, so that sequence says nothing either way.
+- Every later attempt failed outright. `ram-eater.py` pins whatever is free at
+  the time, so on an idle machine it pinned 6.1 to 7.3 GB, and a 2.5 GB budget
+  then cannot host the locked cache at all: `failed to allocate buffer of size
+  1950351360`. Making the budget a real budget needs cgroup-style limits, which
+  is one of the reasons `SETUP.md` argues Linux is the better measurement
+  platform.
+
+The unpinned runs are reported as the result because they are the controlled
+measurement, not because they are the flattering one.
+
+**Not isolated:** the sidecar is a freshly written file, so some of the gain
+could be its physical placement rather than request size. Requests per token
+fell exactly 3x and per-request throughput rose in line with the disk benchmark,
+which is why I think it is request size, but the two are not separated.
+
+**Harness bugs found on the way.** Both were silent and both predate this
+change: (a) the CSV writers formatted with the current culture and then stripped
+commas as thousand separators, so on a machine with a decimal comma 6.21 was
+written as 621 — they now force `InvariantCulture`; (b) `Start-Process
+-ArgumentList` was passing unquoted paths, so any path containing a space (this
+repo lives under "AI Engine") broke the `--json` argument and the ram-eater
+launch.
+
 ## Next step options (updated)
 
 - **K=4 + quant sweep** (cheap, no code): `--override-kv` for K, IQ4_XS/Q3_K_M
@@ -417,8 +492,14 @@ Ranking of bytes-per-token levers by quality cost, so far:
   (`ffn_*_exps` + `ffn_gate_inp`), Qwen3.6's linear-attention layers are
   handled by llama.cpp.
 - **Runtime**: the Rust port now has a validated reference: slot cache +
-  prediction + urgent-miss queue + unbuffered reads. Add overlapped I/O
-  (three chunks in flight per expert), expert-bundled layout, adaptive width.
+  prediction + urgent-miss queue + unbuffered reads + bundled layout (Results 8).
+  What is left to add is real asynchronous I/O (IOCP / io_uring) so one thread
+  can hold the queue depth the drive wants, which `disk-bench.json` says is 2-4,
+  and adaptive prefetch width.
+- **Upstream**: `0002-expert-cache-hook.patch` is small and architecture
+  agnostic, and upstream is already moving this way (`-lm dio`, `-lzm`,
+  `TENSOR_READ_LAZY`). Landing the hook there reaches users without maintaining
+  a patch against a tree that moves daily.
 
 ## Log
 
@@ -431,3 +512,9 @@ Ranking of bytes-per-token levers by quality cost, so far:
 - 2026-09-18 (later) — explicit expert cache built and measured (Results 6):
   1.4-1.56x over the page cache at equal RAM budget, faults/token 25-50k -> ~850,
   bandwidth-bound on a drive that throttles to ~650 MB/s.
+- 2026-10-07 — working tree rebuilt from SETUP.md against the same pin (`972d231`,
+  now with MSVC 14.51). Disk bench re-run on a cool drive: 1496 MB/s for random
+  2 MB QD1 against 1194 in September, same shape, confirming the throttling
+  story. Expert-bundled layout built and measured (Results 8): 1.52-1.61x,
+  bit-exact. Article written up in `docs/streaming-moe-on-a-laptop.md`, with
+  every figure generated from `bench/results/` by `bench/make-charts.py`.
