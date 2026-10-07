@@ -46,7 +46,10 @@ open question at the end.
 First, how fast is this CPU when nothing is missing? `llama-bench`, three
 repetitions, model fully resident:
 
-![Prompt and decode throughput against thread count](img/fig1-threads.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig1-threads.png">
+  <img alt="Prompt and decode throughput against thread count" src="img/fig1-threads.png">
+</picture>
 
 Prompt processing scales with threads up to 12 and tops out at 56.9 tok/s.
 Decoding flattens at 6 threads and peaks at 22.4 tok/s with 10. Decode is
@@ -59,7 +62,10 @@ CPU for a prefetcher.
 Now take the memory away. `bench/sweep-pressure.ps1` pins RAM so that a chosen
 amount stays available, then runs the same pp256 and tg64 benchmark:
 
-![Throughput and disk traffic against available RAM](img/fig2-pressure.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig2-pressure.png">
+  <img alt="Throughput and disk traffic against available RAM" src="img/fig2-pressure.png">
+</picture>
 
 At 6 GB and at 3 GB available, nothing much happens: Windows answers the
 pressure by paging *other* processes out, so the model stays resident and
@@ -78,7 +84,10 @@ So I measured what the drive will actually do, with
 [`bench/disk-bench.py`](../bench/disk-bench.py), reading with
 `FILE_FLAG_NO_BUFFERING` so the numbers are the device and not the cache:
 
-![Read throughput by request size, against the rate demand paging achieved](img/fig3-disk-patterns.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig3-disk-patterns.png">
+  <img alt="Read throughput by request size, against the rate demand paging achieved" src="img/fig3-disk-patterns.png">
+</picture>
 
 Expert-sized requests run near the drive's sequential speed. A random 2 MB read
 at queue depth 1 gets 1496 MB/s, which is 83% of the 1805 MB/s this drive does
@@ -112,7 +121,10 @@ I dumped the router's decisions for 256 sampled decode tokens with
 The first thing I looked for was a hot set worth pinning in RAM. There isn't
 one:
 
-![Experts needed to cover a share of all selections](img/fig5-expert-popularity.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig5-expert-popularity.png">
+  <img alt="Experts needed to cover a share of all selections" src="img/fig5-expert-popularity.png">
+</picture>
 
 Covering 80% of selections needs 37.6 of the 64 experts on average, 95% needs
 52.2, and all 64 are used within 256 tokens. OLMoE is trained with load
@@ -128,7 +140,10 @@ and apply layer L+d's own normalisation and router weights to it. No training,
 no new parameters, just the router you already have, run early on a slightly
 stale input:
 
-![Stale-router accuracy against lookahead distance](img/fig4-stale-router.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig4-stale-router.png">
+  <img alt="Stale-router accuracy against lookahead distance" src="img/fig4-stale-router.png">
+</picture>
 
 One layer ahead it picks the exact top-8 correctly 84% of the time, and if you
 fetch 16 experts instead of 8 you cover 97% of what the real router will pick.
@@ -208,7 +223,10 @@ The correctness check that matters: the hash of the generated token ids must be
 identical with and without the cache, same prompt, greedy sampling. It is, on
 every cache configuration I have run.
 
-![Throughput and page faults, page cache against explicit cache](img/fig6-cache-ab.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig6-cache-ab.png">
+  <img alt="Throughput and page faults, page cache against explicit cache" src="img/fig6-cache-ab.png">
+</picture>
 
 At 2.5 GB available with 32 slots per layer (1.86 GiB locked), decoding went
 from 1.89 tok/s to 2.92 and 2.98. At 1.5 GB with 16 slots (0.93 GiB), from 1.07
@@ -261,7 +279,10 @@ quantisation types in different layers, so the stride varies).
 Same model, same prompt, same cache budget, same prefetch depth, interleaved
 runs, the only difference being which file the experts come from:
 
-![Decode throughput, read throughput and I/O wait, split against bundled](img/fig8-bundled-layout.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig8-bundled-layout.png">
+  <img alt="Decode throughput, read throughput and I/O wait, split against bundled" src="img/fig8-bundled-layout.png">
+</picture>
 
 | cache | layout | tok/s (3 runs) | requests/token | MB/request | MB/s per I/O thread | I/O wait |
 |---|---|---|---|---|---|---|
@@ -312,7 +333,10 @@ does exactly this.
 So I measured the quality cost with `llama-perplexity` on two corpora,
 wikitext-2 test and a corpus of technical prose:
 
-![Perplexity against the number of active experts](img/fig7-ppl-vs-k.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig7-ppl-vs-k.png">
+  <img alt="Perplexity against the number of active experts" src="img/fig7-ppl-vs-k.png">
+</picture>
 
 | K | expert bytes | wikitext-2 | technical prose |
 |---|---|---|---|

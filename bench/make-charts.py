@@ -1,6 +1,10 @@
 """Regenerate the figures used in docs/streaming-moe-on-a-laptop.md.
 
     python bench/make-charts.py [--results bench/results] [--out docs/img]
+                                [--theme light|dark|both]
+
+Writes the light figures to <out> and the dark ones to <out>/dark, which is
+what the prefers-color-scheme sources in the README and the write-up point at.
 
 Reads only the measurement files committed under bench/results: llama-bench
 JSON, the per-run moe-run JSON summarised in ab.csv, the trace analysis JSON,
@@ -17,18 +21,27 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# Palette: fixed slot order, never cycled. Checked for colour-vision
-# separation and for contrast against this surface; the aqua slot falls below
-# 3:1, so every mark drawn in it also carries a direct numeric label.
-SURFACE = "#fcfcfb"
-INK = "#0b0b0b"
-INK2 = "#52514e"
-GRID = "#e5e4e0"
-AXIS = "#c9c8c3"
-S1, S2, S3 = "#2a78d6", "#eb6834", "#1baf7a"
+# Palette: a fixed slot order, never cycled, with its own steps for each
+# surface rather than an automatic flip of one set. Both were checked for
+# colour-vision separation and for contrast against the surface they render on.
+# On light, the aqua slot falls below 3:1, so every mark drawn in it also
+# carries a direct numeric label.
+THEMES = {
+    "light": {"surface": "#fcfcfb", "ink": "#0b0b0b", "ink2": "#52514e",
+              "grid": "#e1e0d9", "axis": "#c3c2b7",
+              "s1": "#2a78d6", "s2": "#eb6834", "s3": "#1baf7a"},
+    "dark":  {"surface": "#1a1a19", "ink": "#ffffff", "ink2": "#c3c2b7",
+              "grid": "#2c2c2a", "axis": "#383835",
+              "s1": "#3987e5", "s2": "#d95926", "s3": "#199e70"},
+}
+SURFACE = INK = INK2 = GRID = AXIS = S1 = S2 = S3 = None
 
 
-def style():
+def style(theme="light"):
+    global SURFACE, INK, INK2, GRID, AXIS, S1, S2, S3
+    t = THEMES[theme]
+    SURFACE, INK, INK2, GRID, AXIS = t["surface"], t["ink"], t["ink2"], t["grid"], t["axis"]
+    S1, S2, S3 = t["s1"], t["s2"], t["s3"]
     plt.rcParams.update({
         "figure.facecolor": SURFACE, "axes.facecolor": SURFACE,
         "savefig.facecolor": SURFACE,
@@ -457,13 +470,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default=os.path.join(here, "bench", "results"))
     ap.add_argument("--out", default=os.path.join(here, "docs", "img"))
+    ap.add_argument("--theme", default="both", choices=["light", "dark", "both"],
+                    help="dark figures go to <out>/dark, for the prefers-color-scheme sources in the docs")
     a = ap.parse_args()
-    os.makedirs(a.out, exist_ok=True)
-    style()
-    for f in (fig_headline, fig_threads, fig_pressure, fig_disk, fig_router,
-              fig_popularity, fig_ab, fig_ppl, fig_layout):
-        if f(a.results, a.out) is None:
-            print("skipped", f.__name__, "- input not present")
+    themes = ["light", "dark"] if a.theme == "both" else [a.theme]
+    for theme in themes:
+        out = a.out if theme == "light" else os.path.join(a.out, "dark")
+        os.makedirs(out, exist_ok=True)
+        style(theme)
+        for f in (fig_headline, fig_threads, fig_pressure, fig_disk, fig_router,
+                  fig_popularity, fig_ab, fig_ppl, fig_layout):
+            if f(a.results, out) is None:
+                print("skipped", f.__name__, "- input not present")
 
 
 if __name__ == "__main__":

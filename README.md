@@ -5,7 +5,10 @@ ordinary laptop: no discrete GPU, 16 GB of memory, an NVMe SSD. The experts stay
 on disk and are streamed into an explicit, locked cache instead of being
 demand-paged by the operating system.
 
-![Three measured comparisons: 10.1x more read throughput, 1.6x decode throughput from the explicit expert cache, 1.5x more from the bundled layout](docs/img/fig0-headline.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig0-headline.png">
+  <img alt="Three measured comparisons: 10.1x more read throughput, 1.6x decode throughput from the explicit expert cache, 1.5x more from the bundled layout" src="docs/img/fig0-headline.png">
+</picture>
 
 **Read the write-up: [Why a 16 GB laptop can't run a big MoE model from SSD, and
 what I built to fix it](docs/streaming-moe-on-a-laptop.md).** It has the whole
@@ -21,7 +24,10 @@ Memory-map the model and let the OS handle it, and the experts arrive one 4 KB
 fault at a time, 25 000 to 50 000 faults per generated token. That path moved
 **148 MB/s** on a drive that does **1496 MB/s** for expert-sized random reads.
 
-![Read throughput by request size, with the rate demand paging actually achieved marked](docs/img/fig3-disk-patterns.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig3-disk-patterns.png">
+  <img alt="Read throughput by request size, with the rate demand paging actually achieved marked" src="docs/img/fig3-disk-patterns.png">
+</picture>
 
 The drive is not slow. The requests are small, and nothing tells the kernel what
 to read next, so it can only react to a fault that already happened. Predicting
@@ -36,7 +42,10 @@ I/O thread pool, addressed through a rewritten `ffn_moe_slot_ids` tensor so
 `mul_mat_id` indexes the cache instead of the model. The page cache is out of
 the picture entirely.
 
-![Decode throughput and page faults per token, page cache against explicit cache](docs/img/fig6-cache-ab.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig6-cache-ab.png">
+  <img alt="Decode throughput and page faults per token, page cache against explicit cache" src="docs/img/fig6-cache-ab.png">
+</picture>
 
 **1.42x to 1.56x at an equal RAM budget**, and page faults per token fall from
 25 000 - 50 000 to around 850.
@@ -48,7 +57,10 @@ three reads from three places in the file. `llama-moe-bundle` writes a sidecar
 in which each expert's matrices sit back to back, and the cache reads whole
 experts from it. The GGUF is untouched and still loads normally.
 
-![Decode throughput, read requests per token and per-thread read throughput, split against bundled](docs/img/fig8-bundled-layout.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig8-bundled-layout.png">
+  <img alt="Decode throughput, read requests per token and per-thread read throughput, split against bundled" src="docs/img/fig8-bundled-layout.png">
+</picture>
 
 **1.52x to 1.61x more**, with bytes per token identical on both sides. Requests
 per token drop by exactly 3x and the drive gives 1040 MB/s per I/O thread
@@ -64,8 +76,14 @@ the mmap path and on every cache and layout configuration.
 | **K=4 is not free** | Halving the active experts halves the bytes but costs **+41%** perplexity on wikitext-2 and **+87%** on technical prose. K=6 costs 9 to 12% for 25% fewer bytes and is a real knob. |
 
 <p align="center">
-  <img src="docs/img/fig4-stale-router.png" width="48%" alt="Stale-router accuracy against lookahead distance">
-  <img src="docs/img/fig7-ppl-vs-k.png" width="48%" alt="Perplexity against the number of active experts">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig4-stale-router.png">
+    <img src="docs/img/fig4-stale-router.png" width="48%" alt="Stale-router accuracy against lookahead distance">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig7-ppl-vs-k.png">
+    <img src="docs/img/fig7-ppl-vs-k.png" width="48%" alt="Perplexity against the number of active experts">
+  </picture>
 </p>
 
 ## How to reproduce
