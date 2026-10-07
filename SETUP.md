@@ -16,9 +16,9 @@ say exactly what still needs porting.
 
 | | |
 |---|---|
-| Visual Studio 2022 | Build Tools are enough; needs "Desktop development with C++" (MSVC v143 + Windows SDK) |
+| Visual Studio 2022 or newer | Build Tools are enough; needs "Desktop development with C++" (MSVC + Windows SDK). Built and measured with v143 and with MSVC 14.51 |
 | CMake | 3.20+, on PATH |
-| Python | 3.10+, on PATH; `pip install numpy huggingface_hub` |
+| Python | 3.10+, on PATH; `pip install numpy matplotlib huggingface_hub` |
 | Git | for the clone |
 
 ### 1. Clone llama.cpp at the pinned commit
@@ -63,6 +63,10 @@ This copies `tools/*` into `llama.cpp/examples/` and appends the
 cmake -S llama.cpp -B llama.cpp\build -G "Visual Studio 17 2022" -A x64 -DGGML_NATIVE=ON -DGGML_AVX_VNNI=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF
 ```
 
+Drop `-G` to let cmake pick the newest Visual Studio it finds, or name yours
+(`"Visual Studio 18 2026"`). The generator has to be a Visual Studio one, not
+Ninja, because the benchmark scripts expect binaries in `build\bin\Release\`.
+
 ```powershell
 cmake --build llama.cpp\build --config Release --parallel 8
 ```
@@ -72,7 +76,7 @@ on a CPU without AVX-VNNI (pre-Alder Lake). `LLAMA_OPENSSL=OFF` avoids needing
 OpenSSL; nothing here fetches over HTTPS.
 
 Binaries land in `llama.cpp\build\bin\Release\`, including our
-`llama-moe-run.exe` and `llama-moe-trace.exe`.
+`llama-moe-run.exe`, `llama-moe-trace.exe` and `llama-moe-bundle.exe`.
 
 ### 5. Get a model
 
@@ -103,8 +107,24 @@ Warm run, explicit expert cache on, prefetch two layers ahead:
 You should see an `expert_cache:` line reporting slots and locked MiB, then a
 `decode ... tok/s` line and a `cache:` line with hits/misses per token.
 
+### 6b. Build the expert-bundled sidecar (optional, worth 1.5x)
+
+`llama-moe-bundle` rewrites the expert weights into a file where each expert's
+matrices are contiguous, so the cache fetches one with a single read instead of
+three. The GGUF is not modified; the sidecar sits next to it and is about the
+size of the expert tensors (3.63 GiB for this model).
+
+```powershell
+.\llama.cpp\build\bin\Release\llama-moe-bundle.exe -m C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf --verify
+```
+
+`--verify` re-reads every expert and compares it byte for byte with the GGUF.
+Then add `--experts-file C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf.experts`
+to any `llama-moe-run` command that uses `--cache-slots`.
+
 **Correctness check that matters:** the `tokens hash` printed at the end must be
-identical with and without `--cache-slots`. Same prompt, greedy (no `--temp`),
+identical with and without `--cache-slots`, and with and without
+`--experts-file`. Same prompt, greedy (no `--temp`),
 same `-n`. If the hashes differ, the cache is serving wrong expert weights.
 
 ```powershell
@@ -120,7 +140,12 @@ same `-n`. If the hashes differ, the cache is serving wrong expert weights.
 .\bench\sweep-pressure.ps1 -Model C:\models\<model>.gguf -AvailableGB 6,3,2,1.5 -Threads 10
 .\bench\ab-prefetch.ps1 -Model C:\models\<model>.gguf -AvailableGB 2.5 -Configs "0 8","2 8"
 .\bench\ppl-k-sweep.ps1 -Model C:\models\<model>.gguf -Arch olmoe -Text C:\models\eval\wikitext-2-raw\wiki.test.raw -K 8,6,4
+.\bench\ab-layout.ps1 -Model C:\models\<model>.gguf -Slots 32 -Rounds 3
+python bench\make-charts.py
 ```
+
+`make-charts.py` regenerates every figure in
+`docs/streaming-moe-on-a-laptop.md` from the files in `bench/results/`.
 
 `sweep-pressure` and `ab-prefetch` pin RAM with `bench/ram-eater.py` to simulate
 a smaller machine; the box will feel sluggish while they run, which is expected.
@@ -153,6 +178,9 @@ cmake -S llama.cpp -B llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=O
 | `VirtualAlloc` staging buffer | `posix_memalign(&p, 4096, n)` — O_DIRECT needs aligned buffers |
 | `VirtualLock` + `SetProcessWorkingSetSizeEx` | `mlock(base, size)`; needs `RLIMIT_MEMLOCK` raised (`ulimit -l`) or `CAP_IPC_LOCK` |
 | `GetLastError()` | `errno` / `strerror` |
+
+`tools/moe-run/moe-bundle.cpp` builds as is: it uses stdio and already maps
+`fseek64` to `fseeko`. Only the cache reading the sidecar is Win32.
 
 `tools/moe-run/moe-run.cpp` — the mmap-prefetch path and the counters:
 

@@ -1,69 +1,136 @@
 # moe-stream
 
-Making medium/large Mixture-of-Experts models usable on ordinary consumer
-machines — no discrete GPU, 8–16 GB RAM, an NVMe SSD — by streaming expert
-weights from disk instead of holding the whole model in memory.
+Running Mixture-of-Experts models whose weights do not fit in RAM, on an
+ordinary laptop: no discrete GPU, 16 GB of memory, an NVMe SSD. The experts stay
+on disk and are streamed into an explicit, locked cache instead of being
+demand-paged by the operating system.
 
-This is the x86/Windows counterpart to what [Edge0](https://github.com/Edge0-AI/Edge0)
-does on Apple Silicon. See [docs/NOTES.md](docs/NOTES.md) for the thesis,
-prior art, and plan.
+**Read the write-up: [Why a 16 GB laptop can't run a big MoE model from SSD, and
+what I built to fix it](docs/streaming-moe-on-a-laptop.md).** It has the full
+story with charts; this file is the short version.
 
-## Getting started
+## Results
 
-**[SETUP.md](SETUP.md)** — rebuilds a working tree from scratch: clone llama.cpp
-at the pinned commit, apply `patches/`, build, fetch a model, smoke test.
-Windows is fully supported; the Linux section lists exactly what still needs
-porting.
+All on one laptop (Core i5-1334U, 16 GB DDR4-3200, Samsung BM9C1 NVMe, CPU only)
+with OLMoE-1B-7B-0924-Instruct Q4_K_M (16 layers, 64 experts, top-8, 3.92 GiB).
 
-## Reference machine
+**The problem.** Memory-mapping the model and letting the page cache handle it
+gets **148 MB/s** out of a drive that does **1496 MB/s** for expert-sized random
+reads. The experts arrive one 4 KB fault at a time, 25k to 50k faults per
+generated token, and no amount of prefetching fixes it: steering the page cache
+with `PrefetchVirtualMemory` bought between 0 and 25%.
 
-| | |
-|---|---|
-| Dell Vostro 15 3530 | Windows 11 Pro 24H2 |
-| Intel Core i5-1334U | 2 P-cores + 8 E-cores, 12 threads, AVX2/AVX-VNNI, no AVX-512 |
-| 16 GB DDR4-3200 dual channel | ~7–8 GB actually available to a model |
-| Intel Iris Xe (shared memory) | no dGPU, no NPU |
-| Samsung BM9C1 512 GB NVMe | |
+**What works.** Owning the I/O path. Experts live in locked slots in our own
+memory, filled by unbuffered reads on an I/O thread pool, addressed through a
+rewritten `ffn_moe_slot_ids` tensor so `mul_mat_id` indexes the cache instead of
+the model. Then give each expert a contiguous home on disk so fetching one is a
+single request.
+
+| | tok/s | page faults/token |
+|---|---|---|
+| page cache (mmap), 2.5 GB available | 1.89 | 24 900 |
+| explicit expert cache, same budget | 2.92 - 2.98 | ~850 |
+| explicit cache + bundled layout, 1.86 GiB cache | 9.33 - 9.73 | ~7 |
+
+The two controlled A/B comparisons are **1.42x to 1.56x** for the explicit cache
+at an equal RAM budget, and a further **1.52x to 1.61x** for the bundled layout.
+Output is bit-exact: the generated token hash is identical on the mmap path and
+on every cache and layout configuration.
+
+Three more things the measurements settled:
+
+- **Prediction is free.** Applying layer L+1's router to the residual entering
+  layer L's FFN picks the exact top-8 84% of the time, and 97% of the real
+  choice is covered if you fetch 16 experts. No training, no extra parameters.
+- **There is no hot set.** Covering 80% of expert selections needs 38 of the 64
+  experts, so cache policy is a small lever on a load-balanced model.
+- **K=4 is not free.** Halving the active experts halves the bytes but costs
+  +41% perplexity on wikitext-2 and +87% on technical prose. K=6 costs 9 to 12%
+  for 25% fewer bytes and is a real knob.
+
+## How to reproduce
+
+[SETUP.md](SETUP.md) has the details. In short, on Windows with Visual Studio
+and Python:
+
+```powershell
+git clone https://github.com/ggml-org/llama.cpp llama.cpp
+cd llama.cpp; git checkout 972d231; git apply ../patches/0001-lazy-experts.patch; git apply ../patches/0002-expert-cache-hook.patch; cd ..
+.\patches\install-tools.ps1
+cmake -S llama.cpp -B llama.cpp\build -A x64 -DGGML_NATIVE=ON -DGGML_AVX_VNNI=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF
+cmake --build llama.cpp\build --config Release --parallel 8
+python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/OLMoE-1B-7B-0924-Instruct-GGUF', filename='OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf', local_dir=r'C:\models')"
+```
+
+Then build the bundled sidecar and run the comparison:
+
+```powershell
+.\llama.cpp\build\bin\Release\llama-moe-bundle.exe -m C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf --verify
+.\bench\ab-layout.ps1 -Model C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf -Slots 32 -Rounds 3
+```
+
+The rest of the measurements:
+
+```powershell
+python bench\disk-bench.py C:\models\<model>.gguf --json bench\results\disk-bench.json
+.\bench\run-bench.ps1      -Model C:\models\<model>.gguf -Threads "4,6,8,10,12"
+.\bench\sweep-pressure.ps1 -Model C:\models\<model>.gguf -AvailableGB 6,3,2,1.5 -Threads 10
+.\bench\ab-prefetch.ps1    -Model C:\models\<model>.gguf -AvailableGB 2.5 -Configs "0 8","2 8"
+.\bench\ppl-k-sweep.ps1    -Model C:\models\<model>.gguf -Arch olmoe -Text C:\models\eval\wikitext-2-raw\wiki.test.raw -K 8,6,4
+python bench\make-charts.py
+```
+
+`sweep-pressure` and `ab-prefetch` pin RAM with `bench/ram-eater.py` to simulate
+a smaller machine, so the box feels sluggish while they run. Every figure in the
+write-up is regenerated by `bench/make-charts.py` from the files in
+`bench/results/`, so the charts and the raw data cannot drift apart.
+
+**The correctness check that matters:** the `tokens hash` printed by
+`llama-moe-run` must be identical with and without `--cache-slots` and with and
+without `--experts-file`, for the same prompt and greedy sampling. If it is not,
+the cache is serving the wrong weights.
 
 ## Layout
 
 ```
-llama.cpp/      upstream clone (gitignored) — commit pinned in docs/NOTES.md
-patches/        our changes to llama.cpp, as patch files
-bench/          benchmark harness (PowerShell + Python)
-bench/results/  raw llama-bench JSON + summaries
-docs/           notes, measurements, design
-C:\models\      GGUF weights (outside the repo)
+patches/        changes to llama.cpp, as patch files
+tools/moe-run/  decode with the explicit expert cache, the predictive prefetcher,
+                and llama-moe-bundle (the expert-bundled layout converter)
+tools/moe-trace/ dump router decisions per layer and token
+bench/          measurement harness (PowerShell + Python)
+bench/results/  raw llama-bench / moe-run JSON and the CSV summaries
+docs/           the write-up, and NOTES.md: every result in the order measured
+llama.cpp/      upstream clone (gitignored), commit pinned in docs/NOTES.md
+C:\models\      GGUF weights and the .experts sidecars (outside the repo)
 ```
 
-## Status (2026-09-18)
+## Status
 
-1. **Baseline** — done. tok/s vs. resident fraction, disk bytes, working set;
-   the NVMe does 1.2-1.5 GB/s for expert-sized reads but demand paging gets
-   ~150-250 MB/s out of it. `docs/NOTES.md` Results 1, 3, 4.
-2. **Spike** — done. A zero-training "stale router" predicts the next layers'
-   experts with 85-98% recall (Results 2), but steering the page cache with
-   `PrefetchVirtualMemory` yields 0-25%: the fault path and the OS cache
-   policy are the bottleneck, not prediction (Results 5).
-3. **Explicit expert cache** — done. `patches/0002-expert-cache-hook.patch`
-   + `tools/moe-run/expert_cache.*`: experts live in locked slots filled by
-   unbuffered reads on an I/O pool, addressed through a rewritten
-   `ffn_moe_slot_ids` tensor. Bit-exact output; page faults gone; 1.4-1.56x
-   over the page cache at equal RAM budget, now purely bandwidth-bound
-   (Results 6). Next levers are bytes per token (K, quant) and the drive.
+Phases 1 to 4 are done and measured: baseline curves, the routing trace and the
+stale-router predictor, the failed page-cache prefetch spike, the explicit
+expert cache, the K sweep, and the expert-bundled layout. Results 1 to 8 in
+[docs/NOTES.md](docs/NOTES.md) have the numbers in the order they were taken,
+including what did not work.
 
-## Tools
+What is open, in the order it matters:
 
-```
-bench/run-bench.ps1        llama-bench + disk/fault/working-set counters
-bench/sweep-pressure.ps1   tok/s vs. available RAM (uses ram-eater.py)
-bench/ab-prefetch.ps1      A/B llama-moe-run configs under pressure
-bench/disk-bench.py        unbuffered NVMe read throughput by pattern
-bench/analyze-trace.py     expert popularity / reuse / stale-router accuracy
-bench/purge-standby.ps1    drop the file cache (UAC) for cold runs
-tools/moe-trace/           dump router decisions per layer and token
-tools/moe-run/             decode with predictive prefetch; --cache-slots enables the
-                           explicit expert cache (expert_cache.cpp)
-patches/                   changes to llama.cpp; install-tools.ps1 copies
-                           tools/ into llama.cpp/examples and registers them
-```
+1. **A real target model.** Everything so far is a 6.9B control that fits in
+   RAM. A 30B-class MoE has more experts, often a shared expert that is always
+   resident, and possibly a less flat popularity curve, which could change the
+   conclusion that cache policy does not matter.
+2. **Asynchronous I/O.** The reader is synchronous per thread, so queue depth
+   equals thread count; the drive wants 2 to 4 from a single issuer.
+3. **Linux.** The patches are platform-neutral, the I/O path is Win32 only.
+   `SETUP.md` lists exactly what needs porting, and cgroups would give real
+   memory limits instead of pinned pages.
+4. **Upstream.** The expert-cache hook is small and architecture-agnostic, and
+   upstream llama.cpp is already moving this way with `--load-mode dio` and
+   lazy tensors.
+
+## Prior art
+
+This is the x86/Windows counterpart to what [Edge0](https://github.com/Edge0-AI/Edge0)
+does on Apple Silicon with MLX. The ideas it builds on are in
+[docs/NOTES.md](docs/NOTES.md): Pre-gated MoE, LLM in a flash, PowerInfer-2,
+MoE-Infinity, Fiddler, ExpertFlow, HOBBIT, and llama.cpp itself, which is the
+baseline every number here is measured against.

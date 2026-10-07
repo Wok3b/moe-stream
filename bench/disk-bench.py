@@ -89,6 +89,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("path")
     ap.add_argument("--total-mb", type=int, default=1024)
+    ap.add_argument("--json", help="also write the table to this file, for bench/make-charts.py")
     args = ap.parse_args()
     h = open_unbuffered(args.path)
     size = file_size(h)
@@ -109,10 +110,25 @@ def main():
         ("random 4 KB       QD1", 4 << 10, 1, False),
         ("random 4 KB       QD8", 4 << 10, 8, False),
     ]
+    out = []
     for name, chunk, qd, seq in tests:
         budget = total if chunk >= (256 << 10) else min(total, 128 << 20)  # small-chunk tests: fewer bytes, same signal
         mbs, ms = run(args.path, size, chunk, qd, budget, seq)
         print(f"{name:<28} {mbs:8.0f} {ms:8.3f}")
+        out.append({"pattern": name.replace("  ", " ").strip(), "chunk_bytes": chunk,
+                    "queue_depth": qd, "sequential": seq,
+                    "mb_s": round(mbs, 1), "ms_per_request": round(ms, 3)})
+    if args.json:
+        import json as _json, datetime, os as _os
+        with open(args.json, "w", encoding="utf-8") as f:
+            _json.dump({"date": datetime.datetime.now().isoformat(timespec="seconds"),
+                        "file": _os.path.basename(args.path),
+                        "file_bytes": size,
+                        "total_mb_per_test": args.total_mb,
+                        "note": "unbuffered reads (FILE_FLAG_NO_BUFFERING), so these are device rates",
+                        "tests": out}, f, indent=2)
+        print()
+        print("wrote", args.json)
 
 
 if __name__ == "__main__":
