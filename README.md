@@ -5,53 +5,72 @@ ordinary laptop: no discrete GPU, 16 GB of memory, an NVMe SSD. The experts stay
 on disk and are streamed into an explicit, locked cache instead of being
 demand-paged by the operating system.
 
+![Three measured comparisons: 10.1x more read throughput, 1.6x decode throughput from the explicit expert cache, 1.5x more from the bundled layout](docs/img/fig0-headline.png)
+
 **Read the write-up: [Why a 16 GB laptop can't run a big MoE model from SSD, and
-what I built to fix it](docs/streaming-moe-on-a-laptop.md).** It has the full
-story with charts; this file is the short version.
+what I built to fix it](docs/streaming-moe-on-a-laptop.md).** It has the whole
+story with charts; this page is the short version.
 
-## Results
+Everything below was measured on one laptop (Core i5-1334U, 16 GB DDR4-3200,
+Samsung BM9C1 NVMe, CPU only) with OLMoE-1B-7B-0924-Instruct Q4_K_M: 16 layers,
+64 experts, top-8, 3.92 GiB on disk.
 
-All on one laptop (Core i5-1334U, 16 GB DDR4-3200, Samsung BM9C1 NVMe, CPU only)
-with OLMoE-1B-7B-0924-Instruct Q4_K_M (16 layers, 64 experts, top-8, 3.92 GiB).
+## The problem: the page cache reads at a tenth of the drive's speed
 
-**The problem.** Memory-mapping the model and letting the page cache handle it
-gets **148 MB/s** out of a drive that does **1496 MB/s** for expert-sized random
-reads. The experts arrive one 4 KB fault at a time, 25k to 50k faults per
-generated token, and no amount of prefetching fixes it: steering the page cache
-with `PrefetchVirtualMemory` bought between 0 and 25%.
+Memory-map the model and let the OS handle it, and the experts arrive one 4 KB
+fault at a time, 25 000 to 50 000 faults per generated token. That path moved
+**148 MB/s** on a drive that does **1496 MB/s** for expert-sized random reads.
 
-**What works.** Owning the I/O path. Experts live in locked slots in our own
-memory, filled by unbuffered reads on an I/O thread pool, addressed through a
-rewritten `ffn_moe_slot_ids` tensor so `mul_mat_id` indexes the cache instead of
-the model. Then give each expert a contiguous home on disk so fetching one is a
-single request.
+![Read throughput by request size, with the rate demand paging actually achieved marked](docs/img/fig3-disk-patterns.png)
 
-| | tok/s | page faults/token |
-|---|---|---|
-| page cache (mmap), 2.5 GB available | 1.89 | 24 900 |
-| explicit expert cache, same budget | 2.92 - 2.98 | ~850 |
-| explicit cache + bundled layout, 1.86 GiB cache | 9.33 - 9.73 | ~7 |
+The drive is not slow. The requests are small, and nothing tells the kernel what
+to read next, so it can only react to a fault that already happened. Predicting
+the experts and calling `PrefetchVirtualMemory` does not fix it either: that
+bought between 0 and 25%, because the prefetch call blocks the compute thread,
+cannot be parallelised, and the pages get evicted before use.
 
-The two controlled A/B comparisons are **1.42x to 1.56x** for the explicit cache
-at an equal RAM budget, and a further **1.52x to 1.61x** for the bundled layout.
-Output is bit-exact: the generated token hash is identical on the mmap path and
-on every cache and layout configuration.
+## What works: owning the I/O path
 
-Three more things the measurements settled:
+Experts live in locked slots in our own memory, filled by unbuffered reads on an
+I/O thread pool, addressed through a rewritten `ffn_moe_slot_ids` tensor so
+`mul_mat_id` indexes the cache instead of the model. The page cache is out of
+the picture entirely.
 
-- **Prediction is free.** Applying layer L+1's router to the residual entering
-  layer L's FFN picks the exact top-8 84% of the time, and 97% of the real
-  choice is covered if you fetch 16 experts. No training, no extra parameters.
-- **There is no hot set.** Covering 80% of expert selections needs 38 of the 64
-  experts, so cache policy is a small lever on a load-balanced model.
-- **K=4 is not free.** Halving the active experts halves the bytes but costs
-  +41% perplexity on wikitext-2 and +87% on technical prose. K=6 costs 9 to 12%
-  for 25% fewer bytes and is a real knob.
+![Decode throughput and page faults per token, page cache against explicit cache](docs/img/fig6-cache-ab.png)
+
+**1.42x to 1.56x at an equal RAM budget**, and page faults per token fall from
+25 000 - 50 000 to around 850.
+
+## Then give each expert one contiguous home on disk
+
+A GGUF stores the experts as three stacked tensors, so fetching one expert is
+three reads from three places in the file. `llama-moe-bundle` writes a sidecar
+in which each expert's matrices sit back to back, and the cache reads whole
+experts from it. The GGUF is untouched and still loads normally.
+
+![Decode throughput, read requests per token and per-thread read throughput, split against bundled](docs/img/fig8-bundled-layout.png)
+
+**1.52x to 1.61x more**, with bytes per token identical on both sides. Requests
+per token drop by exactly 3x and the drive gives 1040 MB/s per I/O thread
+instead of 649. Output is bit-exact: the generated token hash is identical on
+the mmap path and on every cache and layout configuration.
+
+## Three more things the measurements settled
+
+| | |
+|---|---|
+| **Prediction is free** | Applying layer L+1's router to the residual entering layer L's FFN picks the exact top-8 **84%** of the time, and covers **97%** of the real choice if you fetch 16 experts. No training, no extra parameters. |
+| **There is no hot set** | Covering 80% of expert selections needs **38 of the 64** experts, so cache policy is a small lever on a load-balanced model. |
+| **K=4 is not free** | Halving the active experts halves the bytes but costs **+41%** perplexity on wikitext-2 and **+87%** on technical prose. K=6 costs 9 to 12% for 25% fewer bytes and is a real knob. |
+
+<p align="center">
+  <img src="docs/img/fig4-stale-router.png" width="48%" alt="Stale-router accuracy against lookahead distance">
+  <img src="docs/img/fig7-ppl-vs-k.png" width="48%" alt="Perplexity against the number of active experts">
+</p>
 
 ## How to reproduce
 
-[SETUP.md](SETUP.md) has the details. In short, on Windows with Visual Studio
-and Python:
+[SETUP.md](SETUP.md) has the details. On Windows with Visual Studio and Python:
 
 ```powershell
 git clone https://github.com/ggml-org/llama.cpp llama.cpp
@@ -62,7 +81,7 @@ cmake --build llama.cpp\build --config Release --parallel 8
 python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/OLMoE-1B-7B-0924-Instruct-GGUF', filename='OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf', local_dir=r'C:\models')"
 ```
 
-Then build the bundled sidecar and run the comparison:
+Build the bundled sidecar and run the comparison:
 
 ```powershell
 .\llama.cpp\build\bin\Release\llama-moe-bundle.exe -m C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf --verify
@@ -81,9 +100,9 @@ python bench\make-charts.py
 ```
 
 `sweep-pressure` and `ab-prefetch` pin RAM with `bench/ram-eater.py` to simulate
-a smaller machine, so the box feels sluggish while they run. Every figure in the
-write-up is regenerated by `bench/make-charts.py` from the files in
-`bench/results/`, so the charts and the raw data cannot drift apart.
+a smaller machine, so the box feels sluggish while they run. Every figure above
+is regenerated by `bench/make-charts.py` from the files in `bench/results/`, so
+the charts and the raw data cannot drift apart.
 
 **The correctness check that matters:** the `tokens hash` printed by
 `llama-moe-run` must be identical with and without `--cache-slots` and with and
@@ -93,26 +112,26 @@ the cache is serving the wrong weights.
 ## Layout
 
 ```
-patches/        changes to llama.cpp, as patch files
-tools/moe-run/  decode with the explicit expert cache, the predictive prefetcher,
-                and llama-moe-bundle (the expert-bundled layout converter)
+patches/         changes to llama.cpp, as patch files
+tools/moe-run/   decode with the explicit expert cache and the predictive prefetcher,
+                 plus llama-moe-bundle, the expert-bundled layout converter
 tools/moe-trace/ dump router decisions per layer and token
-bench/          measurement harness (PowerShell + Python)
-bench/results/  raw llama-bench / moe-run JSON and the CSV summaries
-docs/           the write-up, and NOTES.md: every result in the order measured
-llama.cpp/      upstream clone (gitignored), commit pinned in docs/NOTES.md
-C:\models\      GGUF weights and the .experts sidecars (outside the repo)
+bench/           measurement harness (PowerShell + Python)
+bench/results/   raw llama-bench / moe-run JSON and the CSV summaries
+docs/            the write-up, and NOTES.md: every result in the order measured
+llama.cpp/       upstream clone (gitignored), commit pinned in docs/NOTES.md
+C:\models\       GGUF weights and the .experts sidecars (outside the repo)
 ```
 
 ## Status
 
-Phases 1 to 4 are done and measured: baseline curves, the routing trace and the
-stale-router predictor, the failed page-cache prefetch spike, the explicit
-expert cache, the K sweep, and the expert-bundled layout. Results 1 to 8 in
+Done and measured: baseline curves, the routing trace and the stale-router
+predictor, the failed page-cache prefetch spike, the explicit expert cache, the
+K sweep, and the expert-bundled layout. Results 1 to 8 in
 [docs/NOTES.md](docs/NOTES.md) have the numbers in the order they were taken,
-including what did not work.
+including what did not work and why.
 
-What is open, in the order it matters:
+Open, in the order it matters:
 
 1. **A real target model.** Everything so far is a 6.9B control that fits in
    RAM. A 30B-class MoE has more experts, often a shared expert that is always
@@ -124,13 +143,13 @@ What is open, in the order it matters:
    `SETUP.md` lists exactly what needs porting, and cgroups would give real
    memory limits instead of pinned pages.
 4. **Upstream.** The expert-cache hook is small and architecture-agnostic, and
-   upstream llama.cpp is already moving this way with `--load-mode dio` and
-   lazy tensors.
+   upstream llama.cpp is already moving this way with `--load-mode dio` and lazy
+   tensors.
 
 ## Prior art
 
 This is the x86/Windows counterpart to what [Edge0](https://github.com/Edge0-AI/Edge0)
-does on Apple Silicon with MLX. The ideas it builds on are in
+does on Apple Silicon with MLX. The ideas it builds on are credited in
 [docs/NOTES.md](docs/NOTES.md): Pre-gated MoE, LLM in a flash, PowerInfer-2,
 MoE-Infinity, Fiddler, ExpertFlow, HOBBIT, and llama.cpp itself, which is the
 baseline every number here is measured against.

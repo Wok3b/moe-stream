@@ -78,6 +78,74 @@ def save(fig, out, name):
 
 # --------------------------------------------------------------- figures
 
+def fig_headline(res, out):
+    """The three measured pairs the README leads with.
+
+    Each panel is one controlled comparison against its own baseline, with its
+    own conditions in the subtitle. They are not stages of a single run and do
+    not multiply together.
+    """
+    disk = sorted(glob.glob(os.path.join(res, "disk-bench*.json")))
+    if not disk:
+        return None
+    big = {t["pattern"]: t["mb_s"] for t in json.load(open(disk[-1]))["tests"]}
+    expert_read = next(v for k, v in big.items() if "2 MB" in k and "QD1" in k)
+
+    press = read_csv(os.path.join(res, "summary-v1.csv"))
+    paging = [float(r["disk_read_MB"]) / float(r["run_s"])
+              for r in press if r["tag"] in ("avail2g", "avail1.5g") and r["test"] == "tg64"]
+    paged = sum(paging) / len(paging)
+
+    ab = [r for r in read_csv(os.path.join(res, "ab.csv")) if r["tag"].startswith("v5")]
+    at25 = [r for r in ab if r["avail_gb"] == "2.5" and float(r["faults_per_token"]) > 100]
+    base25 = [float(r["gen_tps"]) for r in at25 if "--cache-slots" not in r["extra"]]
+    cache25 = [float(r["gen_tps"]) for r in at25 if "--cache-slots" in r["extra"]]
+
+    lay = [r for r in read_csv(os.path.join(res, "layout.csv"))
+           if float(r["avail_gb"]) == 0 and int(r["slots"]) == 32]
+    split = [float(r["gen_tps"]) for r in lay if r["layout"] == "split"]
+    bund = [float(r["gen_tps"]) for r in lay if r["layout"] == "bundled"]
+    if not (base25 and cache25 and split and bund):
+        return None
+
+    def mean(v):
+        return sum(v) / len(v)
+
+    panels = (
+        ("Reading the weights", "MB/s", "{:.0f}",
+         paged, expert_read,
+         "page faults vs whole-expert reads, same drive"),
+        ("Decoding, 2.5 GB of RAM", "tok/s", "{:.2f}",
+         mean(base25), mean(cache25),
+         "OS page cache vs an expert cache we own"),
+        ("Decoding, 1.86 GiB cache", "tok/s", "{:.2f}",
+         mean(split), mean(bund),
+         "three reads per expert vs one"),
+    )
+
+    fig, axes = plt.subplots(1, 3, figsize=(10.2, 3.6))
+    for ax, (title, ylab, fmt, before, after, sub) in zip(axes, panels):
+        bars = ax.bar([0, 1], [before, after], width=0.52, color=[S1, S2], linewidth=0)
+        label_bars(ax, bars, fmt)
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(["", ""])
+        ax.set_title(title, fontsize=10.5, pad=20)
+        ax.set_ylabel(ylab)
+        ax.set_ylim(0, after * 1.35)
+        ax.annotate("%.1fx" % (after / before), (0.5, after * 1.17), ha="center",
+                    fontsize=12, color=INK, fontweight="bold")
+        ax.annotate(sub, (0.5, 1.0), xycoords="axes fraction", textcoords="offset points",
+                    xytext=(0, 6), ha="center", fontsize=7.5, color=INK2)
+        grid_y(ax)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=S1), plt.Rectangle((0, 0), 1, 1, color=S2)]
+    fig.legend(handles, ["what the machine gives you", "moe-stream"],
+               loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.07), frameon=False, fontsize=9)
+    fig.text(0.5, -0.14, "OLMoE-1B-7B Q4_K_M on a Core i5-1334U with 16 GB and a Samsung BM9C1 NVMe, CPU only. "
+                         "Three separate A/B comparisons, each against its own baseline; they are not stages of one run.",
+             ha="center", fontsize=7.5, color=INK2)
+    return save(fig, out, "fig0-headline.png")
+
+
 def fig_threads(res, out):
     """tok/s vs thread count, model fully resident."""
     src = glob.glob(os.path.join(res, "*threads.json"))
@@ -392,7 +460,7 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     style()
-    for f in (fig_threads, fig_pressure, fig_disk, fig_router,
+    for f in (fig_headline, fig_threads, fig_pressure, fig_disk, fig_router,
               fig_popularity, fig_ab, fig_ppl, fig_layout):
         if f(a.results, a.out) is None:
             print("skipped", f.__name__, "- input not present")
