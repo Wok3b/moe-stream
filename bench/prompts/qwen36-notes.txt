@@ -1,0 +1,17 @@
+<|im_start|>user
+Summarize the key findings in these engineering notes in five bullet points.
+
+## Results 9 — Gemma 4 26B-A4B: the cache on a real target (2026-10-13)
+
+A second machine and the first model that is not a control: **Ryzen 5 7430U** (6C/12T, AVX2, no AVX-VNNI,
+so built with `-DGGML_NATIVE=ON` only), 15.4 GB RAM of which ~8 GB is free with nothing loaded, Solidigm
+NVMe. `disk-bench-ryzen7430u.json`: 1302-1339 MB/s for 2 MB random reads at QD4-8, 961 MB/s at QD1,
+26 MB/s for 4 KB QD1 — the same shape and almost the same numbers as the reference machine, so its
+conclusions should carry over.
+
+Model: `gemma-4-26B-A4B-it-UD-IQ3_S.gguf` (unsloth), 10.5 GiB, 30 layers x 128 expert<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+

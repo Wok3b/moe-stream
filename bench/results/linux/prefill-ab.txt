@@ -1,0 +1,180 @@
+== pf-q-story-0-1 rc=0
+prefill 33 tokens in 11.42s (2.9 tok/s), 41036 page faults (222 major)
+decode 64 tokens in 10.37s (6.17 tok/s), 62 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 19.41 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 277.6, late hits 24.2, misses 18.2, prefetched 56.3, evictions 74.5, no-slot 0.0; read 142.3 MB/token in 223.4 requests (0.64 MB each), wait 43.8 ms/token, I/O 371 MB/s per thread
+tokens hash cc86c28936a61b2d, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== pf-q-code-0-1 rc=0
+prefill 48 tokens in 11.18s (4.3 tok/s), 37948 page faults (205 major)
+decode 64 tokens in 10.76s (5.95 tok/s), 73 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 19.48 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 275.7, late hits 22.6, misses 21.7, prefetched 58.9, evictions 80.6, no-slot 0.0; read 154.5 MB/token in 241.8 requests (0.64 MB each), wait 48.6 ms/token, I/O 373 MB/s per thread
+tokens hash 5c82ec2a794e93a4, text: ```python import csv import math from typing import List, Dict, Any, Optional   def compute_column_statistics(filepath: str) -> Dict[str, Dict[str, float]]:    
+== pf-q-notes-0-1 rc=0
+prefill 279 tokens in 11.48s (24.3 tok/s), 45459 page faults (223 major)
+decode 64 tokens in 12.09s (5.29 tok/s), 53 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 25.19 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 262.2, late hits 29.8, misses 28.0, prefetched 79.4, evictions 107.4, no-slot 0.0; read 205.7 MB/token in 322.2 requests (0.64 MB each), wait 64.0 ms/token, I/O 380 MB/s per thread
+tokens hash 637fe9a2efc8f9f5, text: Here are the key findings from the engineering notes summarized in five bullet points:  *   **Test Environment**: The evaluation was conducted on a second machi
+== pf-g-story-0-1 rc=0
+prefill 34 tokens in 5.57s (6.1 tok/s), 42578 page faults (377 major)
+decode 64 tokens in 7.15s (8.95 tok/s), 1 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 6.00 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 227.2, late hits 5.8, misses 7.0, prefetched 22.7, evictions 28.4, no-slot 0.0; read 71.6 MB/token in 59.3 requests (1.21 MB each), wait 19.0 ms/token, I/O 421 MB/s per thread
+tokens hash e410895181af07ce, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== pf-g-code-0-1 rc=0
+prefill 49 tokens in 5.39s (9.1 tok/s), 41952 page faults (384 major)
+decode 64 tokens in 7.49s (8.55 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 6.28 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 226.3, late hits 5.6, misses 8.1, prefetched 25.4, evictions 33.3, no-slot 0.0; read 81.2 MB/token in 67.1 requests (1.21 MB each), wait 21.6 ms/token, I/O 422 MB/s per thread
+tokens hash 679d26926b7e4330, text: To solve this problem efficiently, the industry standard is to use the `pandas` library. It is optimized for tabular data and handles statistical calculations n
+== pf-q-story--1-1 rc=0
+prefill 33 tokens in 4.85s (6.8 tok/s), 40513 page faults (216 major)
+decode 64 tokens in 10.40s (6.15 tok/s), 62 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 19.51 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 277.8, late hits 24.0, misses 18.2, prefetched 56.3, evictions 74.5, no-slot 0.0; read 142.3 MB/token in 223.4 requests (0.64 MB each), wait 44.0 ms/token, I/O 371 MB/s per thread
+tokens hash cc86c28936a61b2d, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== pf-q-code--1-1 rc=0
+prefill 48 tokens in 5.22s (9.2 tok/s), 38798 page faults (220 major)
+decode 64 tokens in 10.85s (5.90 tok/s), 73 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 17.79 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 276.6, late hits 21.7, misses 21.7, prefetched 58.9, evictions 80.6, no-slot 0.0; read 154.5 MB/token in 241.8 requests (0.64 MB each), wait 48.1 ms/token, I/O 370 MB/s per thread
+tokens hash 5c82ec2a794e93a4, text: ```python import csv import math from typing import List, Dict, Any, Optional   def compute_column_statistics(filepath: str) -> Dict[str, Dict[str, float]]:    
+== pf-q-notes--1-1 rc=0
+prefill 279 tokens in 9.66s (28.9 tok/s), 45350 page faults (223 major)
+decode 64 tokens in 12.17s (5.26 tok/s), 53 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 27.29 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 262.4, late hits 29.7, misses 28.0, prefetched 79.4, evictions 107.4, no-slot 0.0; read 205.7 MB/token in 322.2 requests (0.64 MB each), wait 64.4 ms/token, I/O 380 MB/s per thread
+tokens hash 637fe9a2efc8f9f5, text: Here are the key findings from the engineering notes summarized in five bullet points:  *   **Test Environment**: The evaluation was conducted on a second machi
+== pf-g-story--1-1 rc=0
+prefill 34 tokens in 3.58s (9.5 tok/s), 41962 page faults (386 major)
+decode 64 tokens in 7.30s (8.77 tok/s), 1 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.94 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 227.4, late hits 5.6, misses 7.0, prefetched 22.7, evictions 28.4, no-slot 0.0; read 71.6 MB/token in 59.3 requests (1.21 MB each), wait 18.7 ms/token, I/O 421 MB/s per thread
+tokens hash e410895181af07ce, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== pf-g-code--1-1 rc=0
+prefill 49 tokens in 3.84s (12.8 tok/s), 41272 page faults (381 major)
+decode 64 tokens in 7.49s (8.55 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 6.25 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 226.2, late hits 5.6, misses 8.1, prefetched 25.4, evictions 33.3, no-slot 0.0; read 81.2 MB/token in 67.1 requests (1.21 MB each), wait 21.3 ms/token, I/O 427 MB/s per thread
+tokens hash 679d26926b7e4330, text: To solve this problem efficiently, the industry standard is to use the `pandas` library. It is optimized for tabular data and handles statistical calculations n
+== pf-q-story-0-2 rc=0
+prefill 33 tokens in 11.33s (2.9 tok/s), 40311 page faults (211 major)
+decode 64 tokens in 10.43s (6.14 tok/s), 62 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 19.39 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 277.8, late hits 24.0, misses 18.2, prefetched 56.3, evictions 74.5, no-slot 0.0; read 142.3 MB/token in 223.4 requests (0.64 MB each), wait 43.7 ms/token, I/O 371 MB/s per thread
+tokens hash cc86c28936a61b2d, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== pf-q-code-0-2 rc=0
+prefill 48 tokens in 11.17s (4.3 tok/s), 38030 page faults (205 major)
+decode 64 tokens in 10.81s (5.92 tok/s), 73 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 19.43 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 276.1, late hits 22.2, misses 21.7, prefetched 58.9, evictions 80.6, no-slot 0.0; read 154.5 MB/token in 241.8 requests (0.64 MB each), wait 48.9 ms/token, I/O 371 MB/s per thread
+tokens hash 5c82ec2a794e93a4, text: ```python import csv import math from typing import List, Dict, Any, Optional   def compute_column_statistics(filepath: str) -> Dict[str, Dict[str, float]]:    
+== pf-q-notes-0-2 rc=0
+prefill 279 tokens in 11.41s (24.5 tok/s), 45017 page faults (219 major)
+decode 64 tokens in 12.20s (5.25 tok/s), 53 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 26.98 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 262.1, late hits 29.9, misses 28.0, prefetched 79.4, evictions 107.4, no-slot 0.0; read 205.7 MB/token in 322.2 requests (0.64 MB each), wait 64.6 ms/token, I/O 379 MB/s per thread
+tokens hash 637fe9a2efc8f9f5, text: Here are the key findings from the engineering notes summarized in five bullet points:  *   **Test Environment**: The evaluation was conducted on a second machi
+== pf-g-story-0-2 rc=0
+prefill 34 tokens in 5.56s (6.1 tok/s), 42652 page faults (385 major)
+decode 64 tokens in 7.30s (8.77 tok/s), 1 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 6.00 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 227.5, late hits 5.5, misses 7.0, prefetched 22.7, evictions 28.4, no-slot 0.0; read 71.6 MB/token in 59.3 requests (1.21 MB each), wait 19.0 ms/token, I/O 419 MB/s per thread
+tokens hash e410895181af07ce, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== pf-g-code-0-2 rc=0
+prefill 49 tokens in 5.39s (9.1 tok/s), 42296 page faults (394 major)
+decode 64 tokens in 7.50s (8.53 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 6.23 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 226.3, late hits 5.5, misses 8.1, prefetched 25.4, evictions 33.3, no-slot 0.0; read 81.2 MB/token in 67.1 requests (1.21 MB each), wait 21.7 ms/token, I/O 423 MB/s per thread
+tokens hash 679d26926b7e4330, text: To solve this problem efficiently, the industry standard is to use the `pandas` library. It is optimized for tabular data and handles statistical calculations n
+== pf-q-story--1-2 rc=0
+prefill 33 tokens in 4.87s (6.8 tok/s), 40130 page faults (210 major)
+decode 64 tokens in 10.43s (6.14 tok/s), 62 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 19.59 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 277.6, late hits 24.3, misses 18.2, prefetched 56.3, evictions 74.5, no-slot 0.0; read 142.3 MB/token in 223.4 requests (0.64 MB each), wait 43.8 ms/token, I/O 371 MB/s per thread
+tokens hash cc86c28936a61b2d, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== pf-q-code--1-2 rc=0
+prefill 48 tokens in 5.26s (9.1 tok/s), 38724 page faults (209 major)
+decode 64 tokens in 10.84s (5.90 tok/s), 73 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 19.37 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 276.0, late hits 22.3, misses 21.7, prefetched 58.9, evictions 80.6, no-slot 0.0; read 154.5 MB/token in 241.8 requests (0.64 MB each), wait 49.1 ms/token, I/O 370 MB/s per thread
+tokens hash 5c82ec2a794e93a4, text: ```python import csv import math from typing import List, Dict, Any, Optional   def compute_column_statistics(filepath: str) -> Dict[str, Dict[str, float]]:    
+== pf-q-notes--1-2 rc=0
+prefill 279 tokens in 9.71s (28.7 tok/s), 45082 page faults (219 major)
+decode 64 tokens in 12.15s (5.27 tok/s), 53 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 27.38 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 262.2, late hits 29.8, misses 28.0, prefetched 79.4, evictions 107.4, no-slot 0.0; read 205.7 MB/token in 322.2 requests (0.64 MB each), wait 64.2 ms/token, I/O 380 MB/s per thread
+tokens hash 637fe9a2efc8f9f5, text: Here are the key findings from the engineering notes summarized in five bullet points:  *   **Test Environment**: The evaluation was conducted on a second machi
+== pf-g-story--1-2 rc=0
+prefill 34 tokens in 3.57s (9.5 tok/s), 41852 page faults (374 major)
+decode 64 tokens in 7.29s (8.78 tok/s), 1 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.90 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 227.4, late hits 5.6, misses 7.0, prefetched 22.7, evictions 28.4, no-slot 0.0; read 71.6 MB/token in 59.3 requests (1.21 MB each), wait 18.8 ms/token, I/O 422 MB/s per thread
+tokens hash e410895181af07ce, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== pf-g-code--1-2 rc=0
+prefill 49 tokens in 3.76s (13.0 tok/s), 42314 page faults (387 major)
+decode 64 tokens in 7.55s (8.47 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 6.27 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 226.3, late hits 5.6, misses 8.1, prefetched 25.4, evictions 33.3, no-slot 0.0; read 81.2 MB/token in 67.1 requests (1.21 MB each), wait 21.6 ms/token, I/O 422 MB/s per thread
+tokens hash 679d26926b7e4330, text: To solve this problem efficiently, the industry standard is to use the `pandas` library. It is optimized for tabular data and handles statistical calculations n
+== pf-q-story-0-3 rc=0
+prefill 33 tokens in 11.37s (2.9 tok/s), 40252 page faults (224 major)
+decode 64 tokens in 10.42s (6.14 tok/s), 62 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 19.24 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 277.9, late hits 24.0, misses 18.2, prefetched 56.3, evictions 74.5, no-slot 0.0; read 142.3 MB/token in 223.4 requests (0.64 MB each), wait 43.6 ms/token, I/O 371 MB/s per thread
+tokens hash cc86c28936a61b2d, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== pf-q-code-0-3 rc=0
+prefill 48 tokens in 11.18s (4.3 tok/s), 38458 page faults (210 major)
+decode 64 tokens in 10.83s (5.91 tok/s), 73 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 19.30 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 276.2, late hits 22.1, misses 21.7, prefetched 58.9, evictions 80.6, no-slot 0.0; read 154.5 MB/token in 241.8 requests (0.64 MB each), wait 48.7 ms/token, I/O 371 MB/s per thread
+tokens hash 5c82ec2a794e93a4, text: ```python import csv import math from typing import List, Dict, Any, Optional   def compute_column_statistics(filepath: str) -> Dict[str, Dict[str, float]]:    
+== pf-q-notes-0-3 rc=0
+prefill 279 tokens in 11.40s (24.5 tok/s), 45250 page faults (224 major)
+decode 64 tokens in 12.15s (5.27 tok/s), 53 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 26.84 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 262.3, late hits 29.7, misses 28.0, prefetched 79.4, evictions 107.4, no-slot 0.0; read 205.7 MB/token in 322.2 requests (0.64 MB each), wait 64.0 ms/token, I/O 381 MB/s per thread
+tokens hash 637fe9a2efc8f9f5, text: Here are the key findings from the engineering notes summarized in five bullet points:  *   **Test Environment**: The evaluation was conducted on a second machi
+== pf-g-story-0-3 rc=0
+prefill 34 tokens in 5.54s (6.1 tok/s), 42549 page faults (387 major)
+decode 64 tokens in 7.29s (8.78 tok/s), 1 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.98 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 227.4, late hits 5.6, misses 7.0, prefetched 22.7, evictions 28.4, no-slot 0.0; read 71.6 MB/token in 59.3 requests (1.21 MB each), wait 18.9 ms/token, I/O 422 MB/s per thread
+tokens hash e410895181af07ce, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== pf-g-code-0-3 rc=0
+prefill 49 tokens in 5.39s (9.1 tok/s), 42156 page faults (383 major)
+decode 64 tokens in 7.63s (8.39 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.97 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 226.9, late hits 4.9, misses 8.1, prefetched 25.4, evictions 33.3, no-slot 0.0; read 81.2 MB/token in 67.1 requests (1.21 MB each), wait 21.6 ms/token, I/O 433 MB/s per thread
+tokens hash 679d26926b7e4330, text: To solve this problem efficiently, the industry standard is to use the `pandas` library. It is optimized for tabular data and handles statistical calculations n
+== pf-q-story--1-3 rc=0
+prefill 33 tokens in 4.81s (6.9 tok/s), 40475 page faults (213 major)
+decode 64 tokens in 10.46s (6.12 tok/s), 62 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 19.22 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 277.8, late hits 24.0, misses 18.2, prefetched 56.3, evictions 74.5, no-slot 0.0; read 142.3 MB/token in 223.4 requests (0.64 MB each), wait 43.9 ms/token, I/O 370 MB/s per thread
+tokens hash cc86c28936a61b2d, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== pf-q-code--1-3 rc=0
+prefill 48 tokens in 5.27s (9.1 tok/s), 38156 page faults (213 major)
+decode 64 tokens in 10.85s (5.90 tok/s), 73 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 19.35 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 276.0, late hits 22.4, misses 21.7, prefetched 58.9, evictions 80.6, no-slot 0.0; read 154.5 MB/token in 241.8 requests (0.64 MB each), wait 49.3 ms/token, I/O 369 MB/s per thread
+tokens hash 5c82ec2a794e93a4, text: ```python import csv import math from typing import List, Dict, Any, Optional   def compute_column_statistics(filepath: str) -> Dict[str, Dict[str, float]]:    
+== pf-q-notes--1-3 rc=0
+prefill 279 tokens in 9.70s (28.8 tok/s), 46848 page faults (252 major)
+decode 64 tokens in 12.17s (5.26 tok/s), 53 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 27.35 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 262.4, late hits 29.6, misses 28.0, prefetched 79.4, evictions 107.4, no-slot 0.0; read 205.7 MB/token in 322.2 requests (0.64 MB each), wait 64.3 ms/token, I/O 380 MB/s per thread
+tokens hash 637fe9a2efc8f9f5, text: Here are the key findings from the engineering notes summarized in five bullet points:  *   **Test Environment**: The evaluation was conducted on a second machi
+== pf-g-story--1-3 rc=0
+prefill 34 tokens in 3.57s (9.5 tok/s), 41693 page faults (376 major)
+decode 64 tokens in 7.31s (8.76 tok/s), 1 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.93 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 227.5, late hits 5.5, misses 7.0, prefetched 22.7, evictions 28.4, no-slot 0.0; read 71.6 MB/token in 59.3 requests (1.21 MB each), wait 18.8 ms/token, I/O 422 MB/s per thread
+tokens hash e410895181af07ce, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== pf-g-code--1-3 rc=0
+prefill 49 tokens in 3.78s (13.0 tok/s), 41783 page faults (384 major)
+decode 64 tokens in 7.54s (8.49 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 6.21 ms/token on the predictor thread
+cache: 3913 MiB, split layout, per token: hits 226.4, late hits 5.5, misses 8.1, prefetched 25.4, evictions 33.3, no-slot 0.0; read 81.2 MB/token in 67.1 requests (1.21 MB each), wait 21.3 ms/token, I/O 427 MB/s per thread
+tokens hash 679d26926b7e4330, text: To solve this problem efficiently, the industry standard is to use the `pandas` library. It is optimized for tabular data and handles statistical calculations n

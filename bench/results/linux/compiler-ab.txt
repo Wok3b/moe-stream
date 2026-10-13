@@ -1,0 +1,108 @@
+== c-gcc-ginf-1 rc=0
+prefill 34 tokens in 5.81s (5.8 tok/s), 45589 page faults (419 major)
+decode 128 tokens in 12.93s (9.90 tok/s), 811 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.78 ms/token on the predictor thread
+cache: 7208 MiB, split layout, per token: hits 236.6, late hits 1.5, misses 1.9, prefetched 5.1, evictions 0.1, no-slot 0.0; read 16.6 MB/token in 13.8 requests (1.20 MB each), wait 5.5 ms/token, I/O 385 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gcc-g6-1 rc=0
+prefill 34 tokens in 5.73s (5.9 tok/s), 42277 page faults (377 major)
+decode 128 tokens in 21.45s (5.97 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.54 ms/token on the predictor thread
+cache: 1853 MiB, split layout, per token: hits 202.3, late hits 16.9, misses 20.8, prefetched 61.6, evictions 82.4, no-slot 0.0; read 198.7 MB/token in 164.8 requests (1.21 MB each), wait 57.1 ms/token, I/O 426 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gcc-q8-1 rc=0
+prefill 33 tokens in 11.59s (2.8 tok/s), 59197 page faults (207 major)
+decode 128 tokens in 19.85s (6.45 tok/s), 56 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 18.68 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 283.5, late hits 19.8, misses 16.6, prefetched 47.6, evictions 64.3, no-slot 0.0; read 122.7 MB/token in 192.8 requests (0.64 MB each), wait 38.3 ms/token, I/O 371 MB/s per thread
+tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== c-gccnoomp-ginf-1 rc=0
+prefill 34 tokens in 5.85s (5.8 tok/s), 43256 page faults (382 major)
+decode 128 tokens in 11.79s (10.85 tok/s), 448 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 4.74 ms/token on the predictor thread
+cache: 7208 MiB, split layout, per token: hits 236.4, late hits 1.8, misses 1.9, prefetched 5.1, evictions 0.1, no-slot 0.0; read 16.6 MB/token in 13.8 requests (1.20 MB each), wait 5.2 ms/token, I/O 416 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gccnoomp-g6-1 rc=0
+prefill 34 tokens in 5.73s (5.9 tok/s), 42271 page faults (398 major)
+decode 128 tokens in 21.39s (5.99 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.57 ms/token on the predictor thread
+cache: 1853 MiB, split layout, per token: hits 201.9, late hits 17.3, misses 20.8, prefetched 61.6, evictions 82.4, no-slot 0.0; read 198.7 MB/token in 164.8 requests (1.21 MB each), wait 57.3 ms/token, I/O 425 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gccnoomp-q8-1 rc=0
+prefill 33 tokens in 11.61s (2.8 tok/s), 59102 page faults (212 major)
+decode 128 tokens in 19.83s (6.45 tok/s), 56 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 18.56 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 283.4, late hits 20.0, misses 16.6, prefetched 47.6, evictions 64.3, no-slot 0.0; read 122.7 MB/token in 192.8 requests (0.64 MB each), wait 38.4 ms/token, I/O 371 MB/s per thread
+tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== c-clang-ginf-1 rc=0
+prefill 34 tokens in 5.86s (5.8 tok/s), 43658 page faults (389 major)
+decode 128 tokens in 11.94s (10.72 tok/s), 383 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 4.91 ms/token on the predictor thread
+cache: 7208 MiB, split layout, per token: hits 236.4, late hits 1.8, misses 1.9, prefetched 5.1, evictions 0.1, no-slot 0.0; read 16.6 MB/token in 13.8 requests (1.20 MB each), wait 5.4 ms/token, I/O 410 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-clang-g6-1 rc=0
+prefill 34 tokens in 5.74s (5.9 tok/s), 41890 page faults (387 major)
+decode 128 tokens in 21.43s (5.97 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.69 ms/token on the predictor thread
+cache: 1853 MiB, split layout, per token: hits 201.7, late hits 17.6, misses 20.8, prefetched 61.6, evictions 82.4, no-slot 0.0; read 198.7 MB/token in 164.8 requests (1.21 MB each), wait 57.7 ms/token, I/O 424 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-clang-q8-1 rc=0
+prefill 33 tokens in 11.62s (2.8 tok/s), 59609 page faults (213 major)
+decode 128 tokens in 19.92s (6.42 tok/s), 55 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 15.79 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 283.4, late hits 20.0, misses 16.6, prefetched 48.3, evictions 64.9, no-slot 0.0; read 123.9 MB/token in 194.6 requests (0.64 MB each), wait 37.2 ms/token, I/O 372 MB/s per thread
+tokens hash c3f91b11c796f97c, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== c-gcc-ginf-2 rc=0
+prefill 34 tokens in 5.86s (5.8 tok/s), 43227 page faults (384 major)
+decode 128 tokens in 12.12s (10.56 tok/s), 396 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 4.72 ms/token on the predictor thread
+cache: 7277 MiB, split layout, per token: hits 236.4, late hits 1.7, misses 1.9, prefetched 5.0, evictions 0.1, no-slot 0.0; read 16.6 MB/token in 13.8 requests (1.20 MB each), wait 5.5 ms/token, I/O 402 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gcc-g6-2 rc=0
+prefill 34 tokens in 5.74s (5.9 tok/s), 42013 page faults (380 major)
+decode 128 tokens in 21.58s (5.93 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.55 ms/token on the predictor thread
+cache: 1853 MiB, split layout, per token: hits 202.3, late hits 17.0, misses 20.8, prefetched 61.6, evictions 82.4, no-slot 0.0; read 198.7 MB/token in 164.8 requests (1.21 MB each), wait 57.1 ms/token, I/O 425 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gcc-q8-2 rc=0
+prefill 33 tokens in 11.64s (2.8 tok/s), 59232 page faults (207 major)
+decode 128 tokens in 19.91s (6.43 tok/s), 56 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 18.44 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 283.7, late hits 19.7, misses 16.6, prefetched 47.6, evictions 64.3, no-slot 0.0; read 122.7 MB/token in 192.8 requests (0.64 MB each), wait 38.1 ms/token, I/O 371 MB/s per thread
+tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== c-gccnoomp-ginf-2 rc=0
+prefill 34 tokens in 5.84s (5.8 tok/s), 43087 page faults (397 major)
+decode 128 tokens in 12.06s (10.61 tok/s), 387 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 4.72 ms/token on the predictor thread
+cache: 7277 MiB, split layout, per token: hits 236.4, late hits 1.8, misses 1.9, prefetched 5.0, evictions 0.1, no-slot 0.0; read 16.6 MB/token in 13.8 requests (1.20 MB each), wait 5.4 ms/token, I/O 411 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gccnoomp-g6-2 rc=0
+prefill 34 tokens in 5.76s (5.9 tok/s), 41326 page faults (376 major)
+decode 128 tokens in 21.40s (5.98 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.64 ms/token on the predictor thread
+cache: 1853 MiB, split layout, per token: hits 201.9, late hits 17.3, misses 20.8, prefetched 61.6, evictions 82.4, no-slot 0.0; read 198.7 MB/token in 164.8 requests (1.21 MB each), wait 57.3 ms/token, I/O 427 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-gccnoomp-q8-2 rc=0
+prefill 33 tokens in 11.59s (2.8 tok/s), 59258 page faults (212 major)
+decode 128 tokens in 19.86s (6.44 tok/s), 56 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 18.28 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 283.5, late hits 19.9, misses 16.6, prefetched 47.6, evictions 64.3, no-slot 0.0; read 122.7 MB/token in 192.8 requests (0.64 MB each), wait 38.4 ms/token, I/O 370 MB/s per thread
+tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+== c-clang-ginf-2 rc=0
+prefill 34 tokens in 5.83s (5.8 tok/s), 42709 page faults (378 major)
+decode 128 tokens in 11.91s (10.74 tok/s), 418 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 4.84 ms/token on the predictor thread
+cache: 7345 MiB, split layout, per token: hits 236.3, late hits 1.8, misses 1.9, prefetched 5.0, evictions 0.0, no-slot 0.0; read 16.6 MB/token in 13.8 requests (1.20 MB each), wait 5.4 ms/token, I/O 411 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-clang-g6-2 rc=0
+prefill 34 tokens in 5.70s (6.0 tok/s), 41623 page faults (375 major)
+decode 128 tokens in 21.47s (5.96 tok/s), 0 page faults/token (0.0 major)
+prefetch depth 1 width 8: predict 5.65 ms/token on the predictor thread
+cache: 1853 MiB, split layout, per token: hits 201.9, late hits 17.3, misses 20.8, prefetched 61.6, evictions 82.4, no-slot 0.0; read 198.7 MB/token in 164.8 requests (1.21 MB each), wait 57.3 ms/token, I/O 425 MB/s per thread
+tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+== c-clang-q8-2 rc=0
+prefill 33 tokens in 11.60s (2.8 tok/s), 59178 page faults (207 major)
+decode 128 tokens in 19.95s (6.41 tok/s), 55 page faults/token (0.1 major)
+prefetch depth 1 width 8: predict 17.79 ms/token on the predictor thread
+cache: 3936 MiB, split layout, per token: hits 282.9, late hits 20.5, misses 16.6, prefetched 48.3, evictions 64.9, no-slot 0.0; read 123.9 MB/token in 194.6 requests (0.64 MB each), wait 38.2 ms/token, I/O 371 MB/s per thread
+tokens hash c3f91b11c796f97c, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent

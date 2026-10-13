@@ -14,9 +14,15 @@
 //            [--cache-slots C] [--io-threads N] [--cache-max-tokens T] [--no-lock] [--stream-prefill]
 //            [--experts-file model.gguf.experts]
 //   --cache-slots > 0 replaces the mmap/page-cache path by an explicit expert cache (expert_cache.h);
-//            auto takes as many slots as fit next to the non-expert weights (cgroup memory.max or free RAM)
-//   --stream-prefill: batches above --cache-max-tokens stream every expert of a layer through two buffers
-//            (load layer L+1 while L computes) instead of paging them in from the mmap
+//            auto takes as many slots as fit next to the non-expert weights (cgroup memory.max or free RAM).
+//            The cache prefetches with depth 1 by default (--prefetch-depth 0 turns it off); --stats and
+//            --prefetch-prefill apply to the mmap path only
+//   --cache-lfu N: eviction keeps the most used experts, uses decayed by half every N tokens (default 8;
+//            0 = LRU); --cache-trace out.txt logs every lookup, prefetch and seed for bench/replay-cache.py
+//   --stream-prefill: batches above --cache-max-tokens go through two layer buffers instead of paging
+//            experts in from the mmap: each layer gets the experts the predictor guessed for the batch
+//            plus the ones it picked. --stream-full F: a batch picking at least this share of a layer's
+//            experts loads the next layer whole (default 1 with prefetch, else 0.5)
 //   --experts-file reads whole experts from a bundled sidecar (llama-moe-bundle): one request
 //            per expert instead of three
 //            [--temp T -s SEED] [--json out.json]
@@ -103,41 +109,17 @@ bool resident(const mem_range & r) {
 }
 
 struct layer_weights {
-    const ggml_tensor * exps[3]  = {}; // up, gate, down (or gate_up, down)
-    int                 n_exps   = 0;
-    std::vector<float>  gate_inp;      // [n_expert, n_embd] as f32
-    std::vector<float>  norm;          // [n_embd]
-    std::vector<float>  probs_b;       // [n_expert] or empty
-    bool                is_moe   = false;
+    const ggml_tensor * exps[3] = {}; // up, gate, down (or gate_up, down)
+    int                 n_exps  = 0;
 };
 
-// convert any ggml tensor to a flat f32 vector (row-major over ne[0])
-std::vector<float> to_f32(const ggml_tensor * t) {
-    const int64_t n = ggml_nelements(t);
-    std::vector<float> out(n);
-    if (t->type == GGML_TYPE_F32) {
-        GGML_ASSERT(ggml_is_contiguous(t));
-        memcpy(out.data(), t->data, n * sizeof(float));
-        return out;
-    }
-    const auto * traits = ggml_get_type_traits(t->type);
-    GGML_ASSERT(traits->to_float && ggml_is_contiguous(t));
-    const int64_t rows = n / t->ne[0];
-    for (int64_t r = 0; r < rows; ++r) {
-        traits->to_float((const char *) t->data + r * t->nb[1], out.data() + r * t->ne[0], t->ne[0]);
-    }
-    return out;
-}
-
+// mmap mode: the stale router's picks go to PrefetchVirtualMemory / madvise. With --cache-slots the
+// expert cache runs its own predictor (expert_cache::on_router_input) and this one only names the hook.
 struct prefetcher {
-    int   n_layer  = 0;
-    int   n_embd   = 0;
-    int   n_expert = 0;
-    int   k        = 0;   // experts used per token
-    float eps      = 1e-6f;
-    int   gating   = 0;
-
-    std::string inp_name = "ffn_inp"; // graph tensor holding the residual that enters the FFN
+    expert_router router;
+    int  n_layer  = 0;
+    int  n_expert = 0;
+    int  k        = 0;   // experts used per token
 
     int  depth   = 0;     // layers ahead to prefetch (0 = off)
     int  width   = 0;     // experts per layer to prefetch (>= k)
@@ -148,7 +130,7 @@ struct prefetcher {
     std::vector<std::vector<int32_t>> predicted; // union of this token's predictions per layer
     std::vector<uint64_t> predicted_token;       // token the prediction belongs to
 
-    expert_cache * ec = nullptr; // explicit cache mode (else: PrefetchVirtualMemory on the mmap)
+    expert_cache * ec = nullptr; // explicit cache mode: the hook feeds ec->on_router_input
     uint64_t token = 0;          // decode step, set by the main loop
 
     // stats
@@ -160,16 +142,14 @@ struct prefetcher {
     std::vector<mem_range> ranges;
 
     void init(const llama_model * model) {
-        const auto & hp = model->hparams;
-        n_layer  = (int) model->layers.size(); // hparams.n_layer() is not exported from the DLL
-        // residual entering the FFN
-        inp_name = model->arch == LLM_ARCH_GEMMA4     ? "attn_out" :
-                   model->arch == LLM_ARCH_QWEN35MOE ? "attn_residual" : "ffn_inp";
-        n_embd   = (int) hp.n_embd;
-        n_expert = (int) hp.n_expert;
-        k        = (int) hp.n_expert_used_arr[0];
-        eps      = hp.f_norm_rms_eps;
-        gating   = (int) hp.expert_gating_func;
+        if (!router.init(model) && depth > 0) {
+            // unknown router input: the cache still works, prediction cannot
+            LOG_WRN("prefetcher: router input unknown for this architecture, prefetch disabled\n");
+            depth = 0;
+        }
+        n_layer  = router.n_layer;
+        n_expert = router.n_expert;
+        k        = router.k;
         if (width < k) {
             width = k;
         }
@@ -192,72 +172,19 @@ struct prefetcher {
                 }
             }
             w.exps[w.n_exps++] = L.ffn_down_exps;
-            w.gate_inp = to_f32(L.ffn_gate_inp);
-            if (model->arch == LLM_ARCH_GEMMA4) {
-                // gemma4 routes on rms_norm(attn_out) / sqrt(n_embd) * ffn_gate_inp_s (models/gemma4.cpp)
-                w.norm = to_f32(L.ffn_gate_inp_s);
-                for (auto & v : w.norm) {
-                    v /= sqrtf((float) n_embd);
-                }
-            } else if (model->arch == LLM_ARCH_QWEN35MOE) {
-                w.norm = to_f32(L.attn_post_norm); // models/qwen35moe.cpp: routes on rms_norm(attn_residual)
-            } else if (L.ffn_norm) {
-                w.norm = to_f32(L.ffn_norm);
-            } else {
-                // unknown router input: the cache still works, prediction cannot
-                if (depth > 0) {
-                    LOG_WRN("prefetcher: layer %d has no ffn_norm, prefetch disabled for this architecture\n", il);
-                    depth = 0;
-                }
-            }
-            if (L.ffn_exp_probs_b) {
-                w.probs_b = to_f32(L.ffn_exp_probs_b);
-            }
-            w.is_moe = true;
             n_moe++;
         }
-        xn.resize(n_embd);
+        xn.resize(router.n_embd);
         logits.resize(n_expert);
         order.resize(n_expert);
         LOG_INF("prefetcher: %d MoE layers, %d experts, top-%d, gating %d, depth %d, width %d, eps %g\n",
-                n_moe, n_expert, k, gating, depth, width, eps);
+                n_moe, n_expert, k, router.gating, depth, width, router.eps);
         for (int il = 0; il < n_layer; ++il) {
-            if (layers[il].is_moe) {
+            if (layers[il].n_exps) {
                 const auto * t = layers[il].exps[0];
                 LOG_INF("prefetcher: expert bytes per tensor: %zu KiB x %d tensors\n",
                         (size_t) t->nb[2] / 1024, layers[il].n_exps);
                 break;
-            }
-        }
-    }
-
-    // scores of layer il's router for the pre-norm residual x
-    void route(int il, const float * x) {
-        const auto & w = layers[il];
-        double ss = 0.0;
-        for (int i = 0; i < n_embd; ++i) {
-            ss += (double) x[i] * x[i];
-        }
-        const float scale = 1.0f / sqrtf((float) (ss / n_embd) + eps);
-        for (int i = 0; i < n_embd; ++i) {
-            xn[i] = x[i] * scale * w.norm[i];
-        }
-        for (int e = 0; e < n_expert; ++e) {
-            const float * row = w.gate_inp.data() + (size_t) e * n_embd;
-            float acc = 0.0f;
-            for (int i = 0; i < n_embd; ++i) {
-                acc += row[i] * xn[i];
-            }
-            logits[e] = acc;
-        }
-        if (gating == 2 /* sigmoid */) {
-            for (int e = 0; e < n_expert; ++e) {
-                logits[e] = 1.0f / (1.0f + expf(-logits[e]));
-            }
-        }
-        if (!w.probs_b.empty()) { // selection bias is added after the gating function
-            for (int e = 0; e < n_expert; ++e) {
-                logits[e] += w.probs_b[e];
             }
         }
     }
@@ -367,16 +294,6 @@ struct prefetcher {
     } wk;
 
     void issue(int il, const int32_t * ids, int n) {
-        if (ec) {
-            ec->prefetch(il, ids, n, token);
-            n_prefetch_calls++;
-            for (int i = 0; i < n; ++i) {
-                for (int t = 0; t < layers[il].n_exps; ++t) {
-                    bytes_prefetched += layers[il].exps[t]->nb[2];
-                }
-            }
-            return;
-        }
         const auto & w = layers[il];
         job j;
         j.layer = il;
@@ -394,9 +311,6 @@ struct prefetcher {
 
     // whole-layer prefetch for batched prompt processing (every expert gets used anyway)
     void issue_layer(int il) {
-        if (ec) {
-            return;
-        }
         const auto & w = layers[il];
         ranges.clear();
         for (int t = 0; t < w.n_exps; ++t) {
@@ -420,28 +334,32 @@ struct prefetcher {
         if (n_tokens > 1) {
             if (prefill) {
                 for (int d = 1; d <= depth; ++d) {
-                    if (il + d < n_layer && layers[il + d].is_moe) {
+                    if (il + d < n_layer && router.layers[il + d].is_moe) {
                         issue_layer(il + d);
                     }
                 }
             }
             return;
         }
+        predict(il, x, token);
+    }
+
+    void predict(int il, const float * x, uint64_t tok) {
         const auto t0 = std::chrono::steady_clock::now();
         for (int d = 1; d <= depth; ++d) {
             const int lp = il + d;
-            if (lp >= n_layer || !layers[lp].is_moe) {
+            if (lp >= n_layer || !router.layers[lp].is_moe) {
                 continue;
             }
-            route(lp, x);
+            router.route(lp, x, xn.data(), logits.data());
             std::iota(order.begin(), order.end(), 0);
             std::partial_sort(order.begin(), order.begin() + width, order.end(),
                               [&](int a, int b) { return logits[a] > logits[b]; });
             // prefetch what this prediction adds; the union over depths is what was prefetched for lp
             auto & pred = predicted[lp];
-            if (predicted_token[lp] != token) { // first prediction for lp in this token
+            if (predicted_token[lp] != tok) { // first prediction for lp in this token
                 pred.clear();
-                predicted_token[lp] = token;
+                predicted_token[lp] = tok;
             }
             std::vector<int32_t> fresh;
             for (int i = 0; i < width; ++i) {
@@ -500,12 +418,12 @@ bool classify(const char * name, const std::string & inp_name, int & kind, int &
 bool cb_eval(struct ggml_tensor * t, bool ask, void * user_data) {
     auto * pf = (prefetcher *) user_data;
     int kind, layer;
-    if (!classify(t->name, pf->inp_name, kind, layer)) {
+    if (!classify(t->name, pf->router.inp_name, kind, layer)) {
         return false;
     }
     if (ask) {
         switch (kind) {
-            case 0:  return pf->depth > 0;
+            case 0:  return pf->depth > 0 || (pf->ec && pf->ec->router_input());
             case 1:  return pf->stats;
             default: return pf->ec != nullptr;
         }
@@ -513,7 +431,13 @@ bool cb_eval(struct ggml_tensor * t, bool ask, void * user_data) {
     GGML_ASSERT(ggml_backend_buffer_is_host(t->buffer));
     const int n_tokens = (int) (t->ne[1] * t->ne[2] * t->ne[3]);
     if (kind == 0) {
-        pf->on_ffn_inp(layer, (const float *) t->data, n_tokens);
+        if (pf->ec) {
+            if (ggml_is_contiguous(t)) {
+                pf->ec->on_router_input(layer, (const float *) t->data, n_tokens, pf->token);
+            }
+        } else {
+            pf->on_ffn_inp(layer, (const float *) t->data, n_tokens);
+        }
     } else if (kind == 1) {
         // topk is a strided view; a single token is one dense row
         pf->on_topk(layer, (const int32_t *) t->data, n_tokens);
@@ -564,9 +488,9 @@ int main(int argc, char ** argv) {
     for (int i = 0; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--prefetch-depth" && i + 1 < argc) {
-            pf.depth = atoi(argv[++i]);
+            pf.depth = cp.predict_depth = atoi(argv[++i]);
         } else if (a == "--prefetch-width" && i + 1 < argc) {
-            pf.width = atoi(argv[++i]);
+            pf.width = cp.predict_width = atoi(argv[++i]);
         } else if (a == "--prefetch-prefill") {
             pf.prefill = true;
         } else if (a == "--stats") {
@@ -586,10 +510,16 @@ int main(int argc, char ** argv) {
             cp.max_tokens = atoi(argv[++i]);
         } else if (a == "--stream-prefill") {
             cp.stream_prefill = true;
+        } else if (a == "--stream-full" && i + 1 < argc) {
+            cp.stream_full = (float) atof(argv[++i]);
         } else if (a == "--no-lock") {
             cp.lock_memory = false;
         } else if (a == "--experts-file" && i + 1 < argc) {
             cp.bundle = argv[++i];
+        } else if (a == "--cache-lfu" && i + 1 < argc) {
+            cp.lfu_half_life = atoi(argv[++i]);
+        } else if (a == "--cache-trace" && i + 1 < argc) {
+            cp.trace = argv[++i];
         } else if (a == "--io-bench" && i + 1 < argc) {
             io_bench = atoi(argv[++i]);
         } else if (a == "--json" && i + 1 < argc) {
@@ -612,6 +542,9 @@ int main(int argc, char ** argv) {
     llama_backend_init();
     llama_numa_init(params.numa);
 
+    if (cp.slots != 0) {
+        pf.depth = 0; // the cache predicts on its own thread (expert_cache::on_router_input)
+    }
     if (pf.depth > 0 || pf.stats || cp.slots != 0) {
         params.cb_eval           = cb_eval;
         params.cb_eval_user_data = &pf;
@@ -717,6 +650,10 @@ int main(int argc, char ** argv) {
     if (pf.ec) {
         const auto & cs = ec.stats;
         const double per = n_gen ? 1.0 / n_gen : 0.0;
+        if (ec.predict_depth() > 0) {
+            LOG_INF("%s: prefetch depth %d width %d: predict %.2f ms/token on the predictor thread\n", __func__,
+                    ec.predict_depth(), ec.predict_width(), cs.ns_predict.load() / 1e6 * per);
+        }
         LOG_INF("%s: cache: %zu MiB, %s layout, per token: hits %.1f, late hits %.1f, misses %.1f, prefetched %.1f, evictions %.1f, no-slot %.1f; "
                 "read %.1f MB/token in %.1f requests (%.2f MB each), wait %.1f ms/token, I/O %.0f MB/s per thread\n",
                 __func__, ec.bytes_total >> 20, cp.bundle.empty() ? "split" : "bundled",
@@ -729,8 +666,9 @@ int main(int argc, char ** argv) {
     }
     if (pf.ec && ec.bytes_stream) {
         const auto & cs = ec.stats;
-        LOG_INF("%s: stream: %zu MiB buffers, %lld layers loaded (%lld on demand), %.0f MB read, graph waited %.2fs in total; %lld experts seeded into the slots in %.2fs\n",
-                __func__, ec.bytes_stream >> 20, cs.stream_layers.load(), cs.stream_sync.load(),
+        LOG_INF("%s: stream: %zu MiB buffers, %lld layers loaded whole, %lld partly; experts %lld predicted, %lld read late, %lld from slots; %.0f MB read, graph waited %.2fs in total; %lld experts seeded into the slots in %.2fs\n",
+                __func__, ec.bytes_stream >> 20, cs.stream_layers.load(), cs.stream_partial.load(),
+                cs.stream_predicted.load(), cs.stream_late.load(), cs.stream_from_slots.load(),
                 cs.stream_bytes.load() / 1e6, cs.ns_stream_wait.load() / 1e9, cs.seeded.load(), cs.ns_seed.load() / 1e9);
     }
     for (auto & c : text) { if (c == '\n' || c == '\r') c = ' '; }
@@ -747,8 +685,9 @@ int main(int argc, char ** argv) {
                        "\"cache_read_mb_per_token\": %.2f, \"cache_wait_ms_per_token\": %.2f, \"cache_io_mbps\": %.0f, "
                        "\"cache_reads_per_token\": %.2f, \"cache_layout\": \"%s\"}\n",
                     tokens.size(), prefill_s, n_gen, gen_s, gen_tps, pf1.total - pf0.total, pf1.major - pf0.major,
-                    faults_per_token, majflt_per_token, pf.depth, pf.width,
-                    n_gen ? pf.bytes_prefetched / 1e6 / n_gen : 0.0, hit, n_gen ? pf.predict_ms / n_gen : 0.0,
+                    faults_per_token, majflt_per_token, pf.ec ? ec.predict_depth() : pf.depth, pf.ec ? ec.predict_width() : pf.width,
+                    n_gen ? pf.bytes_prefetched / 1e6 / n_gen : 0.0, hit,
+                    n_gen ? (pf.ec ? ec.stats.ns_predict.load() / 1e6 : pf.predict_ms) / n_gen : 0.0,
                     n_gen ? wk_mb / n_gen : 0.0, n_gen ? skp_mb / n_gen : 0.0, stale, n_gen ? wk_ms / n_gen : 0.0,
                     prefetch_threads, touch ? 1 : 0, n_gen ? tch_ms / n_gen : 0.0,
                     pf.ec ? ec.slots() : 0, n_gen ? (double) ec.stats.hits.load() / n_gen : 0.0, n_gen ? (double) ec.stats.late_hits.load() / n_gen : 0.0,

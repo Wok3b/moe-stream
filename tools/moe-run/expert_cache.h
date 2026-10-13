@@ -5,10 +5,12 @@
 
 #include "ggml.h"
 #include "ggml-backend.h"
+#include "expert_router.h"
 
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
 #include <deque>
 #include <mutex>
 #include <string>
@@ -24,7 +26,14 @@ struct expert_cache_params {
     int  max_tokens     = 1;     // batches up to this size use the slots; 0 = slots / experts per token
     bool lock_memory    = true;  // VirtualLock/mlock the cache so the OS cannot page it out under pressure
     bool stream_prefill = false; // larger batches stream whole layers through two buffers, else they use the mmap
+    float stream_full   = -1.0f; // a batch picking at least this share of a layer's experts preloads the next layer
+                                 // whole; below it, each layer reads the predicted and picked experts only.
+                                 // -1: 1 (never whole) with the predictor, 0.5 without (Results 17)
     std::string bundle;          // expert-bundled sidecar (expert_bundle.h); empty = read the GGUF
+    int  predict_depth  = 1;     // stale-router prefetch of the next layers' experts (0 = off)
+    int  predict_width  = 0;     // experts predicted per layer; 0 = the model's experts per token
+    int  lfu_half_life  = 8;     // evict the fewest uses, decayed by half every N tokens (0 = LRU); Results 15
+    std::string trace;           // text log of every lookup, prefetch and seed, for bench/replay-cache.py
 };
 
 struct expert_cache_stats {
@@ -42,11 +51,17 @@ struct expert_cache_stats {
     std::atomic<long long> ns_copy{0};    // memcpy staging -> slot
     // layer streaming (batches above max_tokens)
     std::atomic<long long> stream_layers{0};  // layers loaded into a stream buffer
-    std::atomic<long long> stream_sync{0};    // ... of which on demand, nothing overlapped
+    std::atomic<long long> stream_partial{0};    // layers given only the experts their batch picked
+    std::atomic<long long> stream_from_slots{0}; // ... experts of those copied from a slot instead of read
+    std::atomic<long long> stream_predicted{0};  // experts read ahead on a batch prediction
+    std::atomic<long long> stream_late{0};       // experts the graph had to wait for (not predicted)
     std::atomic<long long> stream_bytes{0};
     std::atomic<long long> ns_stream_wait{0}; // graph thread blocked waiting for a layer
     std::atomic<long long> seeded{0};         // experts copied from a stream buffer into the slots
     std::atomic<long long> ns_seed{0};
+    // predictor
+    std::atomic<long long> predictions{0};    // layers predicted
+    std::atomic<long long> ns_predict{0};     // routing math on the predictor thread
 };
 
 class expert_cache {
@@ -61,6 +76,11 @@ public:
     void on_slot_ids(int il, int32_t * ids, int n, uint64_t token);           // resolve, load misses, rewrite ids -> slots
     void on_stream_ids(int il, const int32_t * ids, int n, uint64_t token);  // wait for layer il, start the next, seed the slots
     void prefetch(int il, const int32_t * experts, int n, uint64_t token);   // start loading experts for a later layer
+    // "<router_input()>-<il>": the residual layer il's router reads, [n_embd, n_tokens] f32. Single tokens are
+    // routed through the next layers' routers on the predictor thread, which prefetches what they pick.
+    void on_router_input(int il, const float * x, int64_t n_tokens, uint64_t token);
+    // graph tensor name to hook for on_router_input, or nullptr when prediction is off
+    const char * router_input() const { return pth.joinable() ? router.inp_name.c_str() : nullptr; }
 
     // read n random experts on the calling thread and report MB/s: isolates raw I/O from inference
     void bench(int n);
@@ -69,6 +89,8 @@ public:
 
     int max_tokens() const { return p.max_tokens; }
     int slots() const { return p.slots; }
+    int predict_depth() const { return pth.joinable() ? p.predict_depth : 0; }
+    int predict_width() const { return p.predict_width; }
 
     expert_cache_stats stats;
     size_t bytes_total  = 0; // cache memory
@@ -93,19 +115,25 @@ private:
         std::vector<uint64_t>   last_use;     // [slots]  LRU clock
         std::vector<uint64_t>   used_token;   // [slots]  token that last used it (protected from eviction)
         std::vector<uint64_t>   pref_token;   // [slots]  token that prefetched it
+        std::vector<uint8_t>    parts_left;   // [slots]  tensor reads still in flight while LOADING
+        std::vector<float>      freq;         // [slots]  decayed use count as of freq_token
+        std::vector<uint64_t>   freq_token;   // [slots]
     };
     struct job {
         int il, expert, slot;
+        int part = -1; // split layout: the one tensor this job reads (-1: the whole bundle)
         // stream chunk (stream >= 0): read [off, off + len) of the GGUF into dst, for stream buffer `stream`
         int      stream = -1;
         uint64_t off    = 0;
         size_t   len    = 0;
         char *   dst    = nullptr;
     };
-    // one of the two stream buffers: the layer it holds or is loading, and the chunks still in flight
+    // one of the two stream buffers: the layer it holds or is loading, which of its experts are there or
+    // in flight, and the reads still in flight
     struct stream_buf {
         int il      = -1;
         int pending = 0;
+        std::vector<uint8_t> have; // [n_expert]
     };
 
     bool init_bundle(const std::string & bundle_path); // validate the sidecar and take its offsets
@@ -114,10 +142,15 @@ private:
     void prefetch_dense(const llama_model * model);    // read the non-expert weights in big requests, not by faults
     void seed_slots(int il, const int32_t * ids, int n, uint64_t token, std::unique_lock<std::mutex> & lk);
     int  alloc_slot(layer_state & L, uint64_t token); // caller holds mu; -1 if nothing evictable
+    void touch(layer_state & L, int s, uint64_t token); // caller holds mu; the graph used slot s
+    float decayed(const layer_state & L, int s, uint64_t token) const;
     void submit(int il, int expert, int slot, bool urgent); // caller holds mu; urgent = front of the queue
-    void submit_stream(int il, int b, bool urgent);         // caller holds mu
+    int  stream_request(int il, int b, const uint8_t * want, bool urgent); // caller holds mu; want nullptr = all
+    void predict_batch(int il, const float * x, int n_tokens, uint64_t seq);
     void io_loop();
-    bool read_expert(void * handle, char * staging, const layer_state & L, int expert, int slot);
+    void predict_loop();
+    void predict(int il, const float * x, uint64_t token);
+    bool read_expert(void * handle, char * staging, const layer_state & L, int expert, int slot, int part);
     bool read_range(void * handle, char * staging, uint64_t off, size_t len, char * dst);
 
     expert_cache_params p;
@@ -144,4 +177,24 @@ private:
     std::deque<job> jobs;
     bool stop = false;
     std::vector<std::thread> threads;
+    FILE * trace_f = nullptr; // written under mu
+    void trace_rec(char kind, int il, uint64_t token, const int32_t * ids, int n);
+
+    // predictor: one residual in flight; a newer layer replaces one the thread has not started
+    expert_router router;
+    std::thread             pth;
+    std::mutex              pmu;
+    std::condition_variable pcv;
+    std::vector<float>      px;
+    int                     p_layer = -1;
+    uint64_t                p_token = 0;
+    bool                    p_stop  = false;
+    std::vector<std::vector<int32_t>> predicted;  // [n_layer] union of this token's predictions
+    std::vector<uint64_t>             pred_token; // [n_layer] token they belong to
+    std::vector<float>                pbx;        // a streamed batch's router input, [n_embd, pb_n]
+    int                               pb_layer = -1;
+    int                               pb_n     = 0;
+    uint64_t                          pb_seq   = 0;
+    uint64_t                          router_seq = 0; // under mu: batch router inputs seen; a prediction made
+                                                      // for an older one may no longer touch the buffers
 };

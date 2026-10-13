@@ -1,0 +1,5 @@
+llama-server, Qwen3.6-35B-A3B UD-Q4_K_M, MemoryMax=8G, MOE_CACHE_SLOTS=auto, MOE_IO_THREADS=4, story prompt, 128 tokens, temperature 0
+MOE_PREFETCH_DEPTH=0: prompt 2.5 tok/s, decode 5.06 tok/s, 128 tokens, content sha256 c564adf94523c169
+MOE_PREFETCH_DEPTH=1: prompt 2.6 tok/s, decode 5.94 tok/s, 128 tokens, content sha256 c564adf94523c169
+MOE_PREFETCH_DEPTH=1, MOE_CACHE_LFU=8 (default): prompt 2.6 tok/s, decode 5.88 tok/s, 128 tokens, content sha256 c564adf94523c169 (single run)
+MOE_STREAM_FULL=0 (whole layers): prompt 2.7 tok/s, decode 5.89; default (predicted + picked experts): prompt 5.1 tok/s, decode 5.90; content sha256 c564adf94523c169 both (single runs)

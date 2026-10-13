@@ -27,6 +27,7 @@
 namespace {
 constexpr size_t SECTOR = 4096; // unbuffered I/O alignment
 constexpr size_t STREAM_CHUNK = 4u << 20; // layer streaming: request size, one job each
+constexpr int MAX_PREDICT_BATCH = 512;    // larger batches are routed whole too slowly to be ahead of the graph
 // MemAvailable counts page cache the rest of the system still uses; taking it all made the dense weights
 // fault again at 111 Qwen slots where 106 ran clean (Results 13), so this share of RAM stays free
 constexpr double SYSTEM_MARGIN = 0.15;
@@ -194,6 +195,11 @@ uint64_t available_memory(const char ** source) {
 } // namespace
 
 expert_cache::~expert_cache() {
+    if (pth.joinable()) {
+        { std::lock_guard<std::mutex> lk(pmu); p_stop = true; }
+        pcv.notify_one();
+        pth.join();
+    }
     {
         std::lock_guard<std::mutex> lk(mu);
         stop = true;
@@ -205,6 +211,9 @@ expert_cache::~expert_cache() {
         }
     }
     llama_expert_cache_clear();
+    if (trace_f) {
+        fclose(trace_f);
+    }
     if (buf) {
         ggml_backend_buffer_free(buf);
     }
@@ -324,6 +333,9 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
             L.last_use.assign(p.slots, 0);
             L.used_token.assign(p.slots, 0);
             L.pref_token.assign(p.slots, 0);
+            L.parts_left.assign(p.slots, 0);
+            L.freq.assign(p.slots, 0.0f);
+            L.freq_token.assign(p.slots, 0);
         }
     }
 
@@ -381,8 +393,36 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
         }
     }
 
+    if (!p.trace.empty()) {
+        trace_f = fopen(p.trace.c_str(), "w");
+        if (!trace_f) {
+            LOG_ERR("expert_cache: cannot write trace %s\n", p.trace.c_str());
+            return false;
+        }
+        fprintf(trace_f, "# slots %d experts %d\n", p.slots, n_expert);
+    }
     for (int i = 0; i < p.io_threads; ++i) {
         threads.emplace_back([this] { io_loop(); });
+    }
+    if (p.predict_depth > 0) {
+        if (router.init(model)) {
+            if (p.predict_width < router.k) {
+                p.predict_width = std::min(router.k, n_expert);
+            }
+            p.predict_width = std::min(p.predict_width, n_expert);
+            px.resize(router.n_embd);
+            predicted.assign(n_layer, {});
+            pred_token.assign(n_layer, UINT64_MAX);
+            pth = std::thread([this] { predict_loop(); });
+            LOG_INF("expert_cache: prefetch depth %d width %d, router input %s\n", p.predict_depth, p.predict_width, router.inp_name.c_str());
+        } else {
+            LOG_WRN("expert_cache: router input unknown for this architecture, prefetch off\n");
+        }
+    }
+    if (p.stream_full < 0.0f) {
+        // with predictions, reading the guessed and picked experts beat whole layers up to 756-token
+        // prompts on Qwen 3.6; without, a batch waits for every expert it picks
+        p.stream_full = pth.joinable() ? 1.0f : 0.5f;
     }
     LOG_INF("expert_cache: %d slots/layer x %d tensors, %zu MiB %s, %d I/O threads, %s layout, request %zu KiB\n",
             p.slots, n_tensors, bytes_total >> 20, locked ? "locked" : "not locked", p.io_threads,
@@ -457,6 +497,9 @@ bool expert_cache::init_stream() {
         return false;
     }
     bytes_stream = ggml_backend_buffer_get_size(sbuf);
+    for (auto & B : sb) {
+        B.have.assign(n_expert, 0);
+    }
 
     ggml_init_params ip = { ggml_tensor_overhead() * n_tensors + 1024, nullptr, /*no_alloc*/ true };
     sctx = ggml_init(ip);
@@ -555,14 +598,33 @@ bool expert_cache::init_bundle(const std::string & bundle_path) {
 }
 
 // caller holds mu
+float expert_cache::decayed(const layer_state & L, int s, uint64_t token) const {
+    return L.freq[s] * exp2f(-(float) (token - L.freq_token[s]) / (float) p.lfu_half_life);
+}
+
+void expert_cache::touch(layer_state & L, int s, uint64_t token) {
+    if (p.lfu_half_life > 0) {
+        L.freq[s]       = decayed(L, s, token) + 1.0f;
+        L.freq_token[s] = token;
+    }
+    L.used_token[s] = token;
+    L.last_use[s]   = ++clock;
+}
+
 int expert_cache::alloc_slot(layer_state & L, uint64_t token) {
+    // a new expert starts with no uses, whichever slot it gets
     for (int s = 0; s < p.slots; ++s) {
         if (L.state[s] == FREE) {
+            L.freq[s]       = 0.0f;
+            L.freq_token[s] = token;
             return s;
         }
     }
-    // LRU among ready slots not touched this token; then among those only prefetched this token
+    // among ready slots not touched this token, then among those only prefetched this token: the fewest
+    // recent uses (a prefetch that was never used has none), ties and lfu_half_life 0 by LRU. Replaying
+    // traces, decayed LFU missed 5-24% less than LRU (Results 15).
     int best = -1;
+    float best_f = 0.0f;
     uint64_t best_use = UINT64_MAX;
     for (int pass = 0; pass < 2 && best < 0; ++pass) {
         for (int s = 0; s < p.slots; ++s) {
@@ -572,9 +634,11 @@ int expert_cache::alloc_slot(layer_state & L, uint64_t token) {
             if (pass == 0 && L.pref_token[s] == token) {
                 continue;
             }
-            if (L.last_use[s] < best_use) {
+            const float f = p.lfu_half_life > 0 ? decayed(L, s, token) : 0.0f;
+            if (best < 0 || f < best_f || (f == best_f && L.last_use[s] < best_use)) {
+                best_f   = f;
                 best_use = L.last_use[s];
-                best = s;
+                best     = s;
             }
         }
     }
@@ -582,6 +646,8 @@ int expert_cache::alloc_slot(layer_state & L, uint64_t token) {
         L.expert_slot[L.slot_expert[best]] = -1;
         L.slot_expert[best] = -1;
         L.state[best] = FREE;
+        L.freq[best]       = 0.0f;
+        L.freq_token[best] = token;
         stats.evictions++;
     }
     return best;
@@ -593,12 +659,23 @@ void expert_cache::submit(int il, int expert, int slot, bool urgent) {
     L.state[slot]        = LOADING;
     L.slot_expert[slot]  = expert;
     L.expert_slot[expert] = slot;
-    if (urgent) {
-        jobs.push_front({ il, expert, slot });
-    } else {
-        jobs.push_back({ il, expert, slot });
+    // split layout: one job per tensor, so a miss's reads run on several I/O threads at once
+    const int n = bundled ? 1 : (int) L.tensors.size();
+    L.parts_left[slot] = (uint8_t) n;
+    for (int i = 0; i < n; ++i) {
+        job j = { il, expert, slot };
+        j.part = bundled ? -1 : (urgent ? n - 1 - i : i);
+        if (urgent) {
+            jobs.push_front(j);
+        } else {
+            jobs.push_back(j);
+        }
     }
-    cv_jobs.notify_one();
+    if (n > 1) {
+        cv_jobs.notify_all();
+    } else {
+        cv_jobs.notify_one();
+    }
 }
 
 void expert_cache::on_ids(int il, int32_t * ids, int64_t n_used, int64_t n_tokens, uint64_t token) {
@@ -610,26 +687,70 @@ void expert_cache::on_ids(int il, int32_t * ids, int64_t n_used, int64_t n_token
     on_slot_ids(il, ids, (int) (n_used * n_tokens), token);
 }
 
-// The stream views hold every expert at its own index, so the ids stay as they are.
+// The stream views hold every expert at its own index, so the ids stay as they are; mul_mat_id reads only
+// the experts picked, so a buffer only needs those.
 void expert_cache::on_stream_ids(int il, const int32_t * ids, int n, uint64_t token) {
     std::unique_lock<std::mutex> lk(mu);
+    trace_rec('B', il, token, ids, n);
     const int64_t t0 = now_ns();
     const int k = moe_ord[il];
     const int b = k % 2;
+    auto & L = layers[il];
+    std::vector<uint8_t> picked(n_expert, 0);
+    int n_picked = 0;
+    for (int i = 0; i < n; ++i) {
+        n_picked += picked[ids[i]] == 0;
+        picked[ids[i]] = 1;
+    }
     if (sb[b].il != il) {
-        // nothing loaded this layer ahead of time (first layer of a batch): load it now
-        cv.wait(lk, [&] { return sb[b].pending == 0; });
-        submit_stream(il, b, /*urgent*/ true);
-        stats.stream_sync++;
+        cv.wait(lk, [&] { return sb[b].pending == 0; }); // another layer's reads; only at a batch start
+        sb[b].il = il;
+        std::fill(sb[b].have.begin(), sb[b].have.end(), 0);
+    }
+    if (sb[b].pending == 0 && std::count(sb[b].have.begin(), sb[b].have.end(), 1) < n_expert) {
+        stats.stream_partial++;
+    }
+    // what is still missing: copy it from a slot, else read it now, ahead of everything queued
+    std::vector<std::pair<int, int>> copies; // expert, slot
+    std::vector<uint8_t> need(n_expert, 0);
+    for (int e = 0; e < n_expert; ++e) {
+        if (!picked[e] || sb[b].have[e]) {
+            continue;
+        }
+        const int s = L.expert_slot[e];
+        if (s >= 0 && L.state[s] == READY) {
+            L.used_token[s] = token; // pinned until this token is done
+            sb[b].have[e] = 1;
+            copies.emplace_back(e, s);
+        } else {
+            need[e] = 1;
+        }
+    }
+    stats.stream_late += stream_request(il, b, need.data(), /*urgent*/ true);
+    stats.stream_from_slots += (long long) copies.size();
+    if (!copies.empty()) {
+        lk.unlock();
+        for (const auto & [e, s] : copies) {
+            for (size_t i = 0; i < L.tensors.size(); ++i) {
+                const size_t bpe = L.tensors[i].bytes_per_expert;
+                memcpy((char *) stream_t[il][i]->data + (size_t) e * bpe, (const char *) L.tensors[i].cache->data + (size_t) s * bpe, bpe);
+            }
+        }
+        lk.lock();
     }
     cv.wait(lk, [&] { return sb[b].pending == 0; });
 
-    // the other buffer holds the previous layer, whose expert matmuls ran before this callback.
-    // After the last layer this loads layer 0 for the next batch.
-    const int kn = (k + 1) % (int) moe_layers.size();
-    const int bn = kn % 2;
-    if (bn != b && sb[bn].il != moe_layers[kn] && sb[bn].pending == 0) {
-        submit_stream(moe_layers[kn], bn, /*urgent*/ false);
+    // the other buffer held the previous layer, whose expert matmuls ran before this callback. A batch that
+    // picks most experts preloads the next layer whole; a smaller one gets the predictor's guess for it
+    // (predict_batch) plus what is missing at its callback. Never past the last layer: what follows a
+    // prompt is usually decode, which does not use the stream buffers.
+    const int kn = k + 1;
+    if (kn < (int) moe_layers.size() && n_picked >= p.stream_full * n_expert) {
+        const int bn = kn % 2;
+        if (sb[bn].il == moe_layers[kn] || sb[bn].pending == 0) {
+            stream_request(moe_layers[kn], bn, nullptr, /*urgent*/ false);
+            stats.stream_layers++;
+        }
     }
     stats.ns_stream_wait += now_ns() - t0;
 
@@ -657,6 +778,7 @@ void expert_cache::seed_slots(int il, const int32_t * ids, int n, uint64_t token
         order.resize(p.slots);
     }
     std::reverse(order.begin(), order.end());
+    trace_rec('S', il, token, order.data(), (int) order.size());
 
     std::vector<std::pair<int, int>> copies; // expert, slot
     for (int e : order) {
@@ -671,8 +793,7 @@ void expert_cache::seed_slots(int il, const int32_t * ids, int n, uint64_t token
             L.expert_slot[e] = s;
             copies.emplace_back(e, s);
         }
-        L.used_token[s] = token;
-        L.last_use[s]   = ++clock;
+        touch(L, s, token);
     }
     if (copies.empty()) {
         return;
@@ -733,32 +854,73 @@ void expert_cache::prefetch_dense(const llama_model * model) {
 #endif
 }
 
-// caller holds mu
-void expert_cache::submit_stream(int il, int b, bool urgent) {
+// caller holds mu. Reads the experts of layer il that want marks (nullptr: all) and buffer b has not got,
+// in runs of adjacent experts, one job per run and tensor. A buffer holding another layer must be idle.
+int expert_cache::stream_request(int il, int b, const uint8_t * want, bool urgent) {
+    auto & B = sb[b];
+    if (B.il != il) {
+        GGML_ASSERT(B.pending == 0);
+        B.il = il;
+        std::fill(B.have.begin(), B.have.end(), 0);
+    }
     const auto & L = layers[il];
+    std::vector<uint8_t> need(n_expert, 0);
+    int n_need = 0;
+    for (int e = 0; e < n_expert; ++e) {
+        if ((!want || want[e]) && !B.have[e]) {
+            need[e] = 1;
+            B.have[e] = 1;
+            n_need++;
+        }
+    }
+    if (n_need == 0) {
+        return 0;
+    }
     std::vector<job> js;
     for (size_t i = 0; i < L.tensors.size(); ++i) {
         const auto & ts = L.tensors[i];
-        const size_t total = ggml_nbytes(ts.orig);
-        for (size_t o = 0; o < total; o += STREAM_CHUNK) {
+        const int run_max = std::max<int>(1, (int) (STREAM_CHUNK / ts.bytes_per_expert));
+        for (int e = 0; e < n_expert; ) {
+            if (!need[e]) {
+                ++e;
+                continue;
+            }
+            int e1 = e;
+            while (e1 < n_expert && need[e1] && e1 - e < run_max) {
+                ++e1;
+            }
             job j = { il, -1, -1 };
             j.stream = b;
-            j.off    = ts.file_off + o;
-            j.len    = std::min(STREAM_CHUNK, total - o);
-            j.dst    = (char *) stream_t[il][i]->data + o;
+            j.off    = ts.file_off + (uint64_t) e * ts.bytes_per_expert;
+            j.len    = (size_t) (e1 - e) * ts.bytes_per_expert;
+            j.dst    = (char *) stream_t[il][i]->data + (size_t) e * ts.bytes_per_expert;
             js.push_back(j);
+            e = e1;
         }
     }
-    sb[b].il      = il;
-    sb[b].pending = (int) js.size();
+    B.pending += (int) js.size();
     jobs.insert(urgent ? jobs.begin() : jobs.end(), js.begin(), js.end());
-    stats.stream_layers++;
     cv_jobs.notify_all();
+    return n_need;
+}
+
+// one line per event: D (lookup), P (prefetch), S (seed, in insertion order) or B (a streamed batch's ids,
+// token by token), layer, token, experts
+void expert_cache::trace_rec(char kind, int il, uint64_t token, const int32_t * ids, int n) {
+    if (!trace_f) {
+        return;
+    }
+    fprintf(trace_f, "%c %d %llu", kind, il, (unsigned long long) token);
+    for (int i = 0; i < n; ++i) {
+        fprintf(trace_f, " %d", ids[i]);
+    }
+    fputc('\n', trace_f);
 }
 
 void expert_cache::on_slot_ids(int il, int32_t * ids, int n, uint64_t token) {
     auto & L = layers[il];
     std::unique_lock<std::mutex> lk(mu);
+    trace_rec('D', il, token, ids, n);
     const int64_t t0 = now_ns();
     std::vector<int32_t> slots(n);
     for (int i = 0; i < n; ++i) {
@@ -775,8 +937,7 @@ void expert_cache::on_slot_ids(int il, int32_t * ids, int n, uint64_t token) {
         } else {
             stats.hits++;
         }
-        L.used_token[s] = token;
-        L.last_use[s]   = ++clock;
+        touch(L, s, token);
         slots[i] = s;
     }
     for (int i = 0; i < n; ++i) {
@@ -789,6 +950,7 @@ void expert_cache::on_slot_ids(int il, int32_t * ids, int n, uint64_t token) {
 void expert_cache::prefetch(int il, const int32_t * experts, int n, uint64_t token) {
     auto & L = layers[il];
     std::lock_guard<std::mutex> lk(mu);
+    trace_rec('P', il, token, experts, n);
     for (int i = 0; i < n; ++i) {
         const int e = experts[i];
         int s = L.expert_slot[e];
@@ -808,7 +970,141 @@ void expert_cache::prefetch(int il, const int32_t * experts, int n, uint64_t tok
     }
 }
 
-bool expert_cache::read_expert(void * handle, char * staging, const layer_state & L, int expert, int slot) {
+void expert_cache::on_router_input(int il, const float * x, int64_t n_tokens, uint64_t token) {
+    if (!pth.joinable()) {
+        return;
+    }
+    if (n_tokens > 1) {
+        // a streamed batch: guess the next layer's experts while this one computes (predict_batch)
+        if (!sbuf || n_tokens <= p.max_tokens || n_tokens > MAX_PREDICT_BATCH) {
+            return;
+        }
+        uint64_t seq;
+        {
+            std::lock_guard<std::mutex> lk(mu);
+            seq = ++router_seq;
+        }
+        {
+            std::lock_guard<std::mutex> lk(pmu);
+            pbx.assign(x, x + (size_t) router.n_embd * n_tokens);
+            pb_layer = il;
+            pb_n     = (int) n_tokens;
+            pb_seq   = seq;
+        }
+        pcv.notify_one();
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lk(pmu);
+        std::copy(x, x + router.n_embd, px.begin());
+        p_layer = il;
+        p_token = token;
+    }
+    pcv.notify_one();
+}
+
+// The routing math reads every later router matrix (~2 MB per layer on Qwen 3.6), so it runs here,
+// beside the graph, instead of in the eval callback.
+void expert_cache::predict_loop() {
+    std::vector<float> x(router.n_embd);
+    std::vector<float> xb;
+    for (;;) {
+        int il;
+        uint64_t token;
+        {
+            std::unique_lock<std::mutex> lk(pmu);
+            pcv.wait(lk, [&] { return p_stop || p_layer >= 0 || pb_layer >= 0; });
+            if (p_stop) {
+                return;
+            }
+            if (pb_layer >= 0) {
+                il = pb_layer;
+                const int n = pb_n;
+                const uint64_t seq = pb_seq;
+                pb_layer = -1;
+                xb.swap(pbx);
+                lk.unlock();
+                predict_batch(il, xb.data(), n, seq);
+                continue;
+            }
+            il    = p_layer;
+            token = p_token;
+            p_layer = -1;
+            x.swap(px);
+        }
+        predict(il, x.data(), token);
+    }
+}
+
+// Every token of the batch through the next layer's router; the union of their top-k is read into that
+// layer's stream buffer while this layer computes. The buffer held the layer before this one, which is
+// done, unless the graph has moved on since: then the guess is dropped.
+void expert_cache::predict_batch(int il, const float * x, int n_tokens, uint64_t seq) {
+    const int64_t t0 = now_ns();
+    const int lp = il + 1;
+    if (lp >= (int) layers.size() || !router.layers[lp].is_moe || moe_ord[lp] < 0) {
+        return;
+    }
+    std::vector<float>   xn(router.n_embd), logits(n_expert);
+    std::vector<int32_t> order(n_expert);
+    std::vector<uint8_t> want(n_expert, 0);
+    for (int t = 0; t < n_tokens; ++t) {
+        router.route(lp, x + (size_t) t * router.n_embd, xn.data(), logits.data());
+        for (int e = 0; e < n_expert; ++e) {
+            order[e] = e;
+        }
+        std::partial_sort(order.begin(), order.begin() + router.k, order.end(),
+                          [&](int a, int b) { return logits[a] > logits[b]; });
+        for (int i = 0; i < router.k; ++i) {
+            want[order[i]] = 1;
+        }
+    }
+    stats.ns_predict += now_ns() - t0;
+    std::lock_guard<std::mutex> lk(mu);
+    const int bn = moe_ord[lp] % 2;
+    if (seq != router_seq || (sb[bn].il != lp && sb[bn].pending != 0)) {
+        return;
+    }
+    stats.stream_predicted += stream_request(lp, bn, want.data(), /*urgent*/ false);
+}
+
+void expert_cache::predict(int il, const float * x, uint64_t token) {
+    const int64_t t0 = now_ns();
+    std::vector<float>   xn(router.n_embd), logits(n_expert);
+    std::vector<int32_t> order(n_expert), fresh;
+    for (int d = 1; d <= p.predict_depth; ++d) {
+        const int lp = il + d;
+        if (lp >= (int) layers.size() || !router.layers[lp].is_moe || layers[lp].tensors.empty()) {
+            continue;
+        }
+        router.route(lp, x, xn.data(), logits.data());
+        for (int e = 0; e < n_expert; ++e) {
+            order[e] = e;
+        }
+        std::partial_sort(order.begin(), order.begin() + p.predict_width, order.end(),
+                          [&](int a, int b) { return logits[a] > logits[b]; });
+        // prefetch what this prediction adds; the union over depths is what was prefetched for lp
+        auto & pred = predicted[lp];
+        if (pred_token[lp] != token) {
+            pred.clear();
+            pred_token[lp] = token;
+        }
+        fresh.clear();
+        for (int i = 0; i < p.predict_width; ++i) {
+            if (std::find(pred.begin(), pred.end(), order[i]) == pred.end()) {
+                pred.push_back(order[i]);
+                fresh.push_back(order[i]);
+            }
+        }
+        if (!fresh.empty()) {
+            prefetch(lp, fresh.data(), (int) fresh.size(), token);
+        }
+        stats.predictions++;
+    }
+    stats.ns_predict += now_ns() - t0;
+}
+
+bool expert_cache::read_expert(void * handle, char * staging, const layer_state & L, int expert, int slot, int part) {
     if (bundled) {
         // the whole expert is one aligned, in-bounds range: one request, then
         // hand the staging buffer out across the slot tensors
@@ -830,7 +1126,11 @@ bool expert_cache::read_expert(void * handle, char * staging, const layer_state 
         stats.n_reads++;
         return true;
     }
-    for (const auto & ts : L.tensors) {
+    for (int i = 0; i < (int) L.tensors.size(); ++i) {
+        if (part >= 0 && i != part) {
+            continue;
+        }
+        const auto & ts = L.tensors[i];
         const uint64_t off = ts.file_off + (uint64_t) expert * ts.bytes_per_expert;
         const uint64_t a0  = off & ~(uint64_t) (SECTOR - 1);
         const uint64_t a1  = (off + ts.bytes_per_expert + SECTOR - 1) & ~(uint64_t) (SECTOR - 1);
@@ -885,7 +1185,7 @@ void expert_cache::bench(int n) {
         const int il = moe[(rng >> 8) % moe.size()];
         rng = rng * 1664525u + 1013904223u;
         const int e = (int) ((rng >> 8) % n_expert);
-        read_expert(h, staging, layers[il], e, 0);
+        read_expert(h, staging, layers[il], e, 0, -1);
     }
     const double sec = (now_ns() - t0) / 1e9;
     const double mb  = (stats.bytes_read.load() - b0) / 1e6;
@@ -960,16 +1260,23 @@ void expert_cache::io_loop() {
             continue;
         }
         const int64_t t0 = now_ns();
-        const bool ok = read_expert(h, staging, layers[j.il], j.expert, j.slot);
+        const bool ok = read_expert(h, staging, layers[j.il], j.expert, j.slot, j.part);
         stats.ns_io += now_ns() - t0;
         if (!ok) {
             LOG_ERR("expert_cache: read failed for layer %d expert %d (%s)\n", j.il, j.expert, os_error().c_str());
         }
+        bool ready;
         {
             std::lock_guard<std::mutex> lk(mu);
-            layers[j.il].state[j.slot] = READY; // on failure the slot holds garbage; the error is logged
+            auto & L = layers[j.il];
+            ready = --L.parts_left[j.slot] == 0;
+            if (ready) {
+                L.state[j.slot] = READY; // on failure the slot holds garbage; the error is logged
+            }
         }
-        cv.notify_all();
+        if (ready) {
+            cv.notify_all();
+        }
     }
     free_aligned(staging);
     if (hg != h) {

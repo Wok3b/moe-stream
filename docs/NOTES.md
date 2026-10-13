@@ -772,24 +772,144 @@ column is single runs from Results 11/12.
 Caveats: one machine, one desktop load. The margin is a share of RAM on the guess that the page cache
 the rest of the system needs grows with RAM; that is one 16 GB machine's worth of evidence.
 
+## Results 14 — prefetch that pays: faster routing, parallel reads, server (2026-10-13)
+
+Results 10 measured the stale-router prefetcher as a loss on Gemma 4, and Results 12 left it off for
+Qwen. Three changes, none of which touch the math (all 36 A/B runs give the model's hash):
+
+1. **The routing math vectorizes.** The router dot product summed into one float, which GCC cannot
+   reorder without -ffast-math, so it ran scalar: 15 ms/token on Qwen (40 routers of 256 x 2048).
+   Sixteen independent accumulators: 5.8 ms. It now reads the model's f32 router in place.
+2. **A miss is one read job per tensor**, not one job doing three reads in a row, so its reads run on
+   several I/O threads at once. 6 or 8 I/O threads instead of 4 changed nothing (6.13, 6.15 vs 6.08).
+3. **Prediction runs on its own thread inside the cache** (`expert_cache::on_router_input`); the graph
+   only copies the residual (8 KB) and goes on. moe-run and llama-server share it; moe-run's own
+   prefetcher remains for the mmap path.
+
+Interleaved A/B (committed build / split reads / split reads + prefetch depth 1 width 8), cgroup budget,
+cold page cache, 128 tokens, auto slots, 4 I/O threads, decode tok/s, median of 3
+(`bench/results/linux/prefetch-ab.txt`):
+
+| | before | split reads | + prefetch | |
+|---|---|---|---|---|
+| Qwen 6 GB | 3.75 | 3.82 | **4.79** | +28% |
+| Qwen 8 GB | 5.22 | 5.33 | **6.21** | +19% |
+| Gemma 6 GB | 5.09 | 4.93 | **5.48** | +8% |
+| Gemma 8 GB | 9.04 | 8.92 | 9.05 | 0% |
+
+- **Prefetch now wins on both models, more the tighter the budget.** At Qwen 8 GB misses fall from 52 to
+  17 per token and the wait from 80 to 40 ms; the price is 30% more bytes read (wrong guesses evict).
+- **Split reads alone are mixed**: +2% on Qwen (three 0.6 MB tensors), -1 to -3% on Gemma (two 1.2 MB
+  tensors, less to split). Their job is landing prefetches sooner; not measured: Gemma, old reads +
+  prefetch.
+- Depth 2 and width 10-12 were no better than depth 1 width 8 on Qwen 8 GB (single runs, 5.6-6.0).
+- **llama-server**, Qwen 8 GB, same request (`prefetch-server.txt`): 5.06 -> **5.94** tok/s with
+  `MOE_PREFETCH_DEPTH=0` vs the new default 1, identical text.
+
+Prefetch is now on by default whenever the cache is (`--prefetch-depth 0` / `MOE_PREFETCH_DEPTH=0` turn
+it off). Caveats: one machine, 3 runs per cell; the predictor thread takes ~20 ms/token of one core,
+which on a machine with fewer cores than threads could cost the graph.
+
+## Results 15 — eviction policy from replayed traces (2026-10-13)
+
+`llama-moe-run --cache-trace` logs every lookup, prefetch and prefill seed in the order the cache sees
+them. Routing does not depend on the cache, so one trace replays any policy offline
+(`bench/replay-cache.py`, which mirrors `alloc_slot`'s protections). The replay of LRU reproduces the
+live run exactly (Qwen story, 54 slots: 16.6 misses and 60.8 evictions per token in both). Four traces,
+384 tokens each, story and code prompts (`bench/results/linux/traces/`). With prefetch, per token:
+
+| trace | slots | LRU misses / reads | decayed LFU, 8 tokens | Belady (bound) |
+|---|---|---|---|---|
+| Qwen story | 25 / 54 | 27.6 / 126, 16.6 / 61 | 26.2 / 119, 15.7 / 58 | 18.4, 9.4 |
+| Qwen code | 25 / 54 | 45.6 / 167, 30.5 / 103 | 45.1 / 162, 28.8 / 99 | 32.1, 17.3 |
+| Gemma story | 27 / 57 | 26.9 / 86, 5.7 / 19 | 21.1 / 81, 4.3 / 20 | 13.5, 2.0 |
+| Gemma code | 27 / 57 | 31.2 / 92, 9.4 / 27 | 27.0 / 89, 7.7 / 30 | 17.1, 3.8 |
+
+- **Decayed LFU** (evict the fewest uses, each use worth half as much every 8 tokens) is the most
+  consistent: 2-6% fewer misses on Qwen, 13-24% on Gemma. Half-lives 4-16 are within a few percent of
+  each other. LRU-2 and "a prefetch is not a use" (lru-cold) were no better than LRU.
+- An unused prefetch has no uses, so under LFU wrong guesses go first without a special rule.
+- **Belady misses 40-60% less than anything buildable.** The rest is in knowing the future; what we
+  have of it is the next layer's prediction, already used.
+
+Live, interleaved, 3 rounds, 128 tokens, auto slots, prefetch on (`lfu-ab.txt`), decode tok/s:
+
+| | LRU | LFU 8 | |
+|---|---|---|---|
+| Qwen 6 GB | 4.94 | **5.05** | +2% |
+| Qwen 8 GB | 6.33 | **6.44** | +2% |
+| Gemma 6 GB | 5.58 | **5.93** | +6% |
+| Gemma 8 GB | 9.20 | **9.33** | +1% |
+
+All 24 runs bit-exact. Default now: `--cache-lfu 8` / `MOE_CACHE_LFU=8`, 0 for LRU.
+
+## Results 16 — clang vs GCC (2026-10-13)
+
+GCC 16.2 with OpenMP (the default build), GCC without OpenMP, clang 23.1 (no OpenMP: Arch's `openmp`
+package is not installed). Same flags, `-DGGML_NATIVE=ON`, interleaved, 2 rounds, decode tok/s
+(`compiler-ab.txt`):
+
+| | GCC + OpenMP | GCC, no OpenMP | clang, no OpenMP |
+|---|---|---|---|
+| Gemma, no limit | 9.90 / 10.56 | 10.85 / 10.61 | 10.72 / 10.74 |
+| Gemma 6 GB | 5.97 / 5.93 | 5.99 / 5.98 | 5.97 / 5.96 |
+| Qwen 8 GB | 6.45 / 6.43 | 6.45 / 6.44 | 6.42 / 6.41 |
+
+**No difference beyond noise.** The compute is in ggml's hand-written SIMD kernels, which compile the
+same either way. clang's Qwen hash differs (`c3f91b11c796f97c`): another compiler rounds some float
+sums differently and greedy decoding diverges; each build stays bit-exact with itself. The
+Windows/Linux gap (Results 11) is therefore probably not GCC vs MSVC; clang-cl on Windows would settle it.
+
+## Results 17 — prefill reads what the prompt uses (2026-10-13)
+
+Stream prefill (Results 10) read every expert of every layer: 19.4 GB per prompt on Qwen 3.6, 11 s
+whatever the prompt. A short prompt picks few of them (`B` records in `--cache-trace`):
+
+| prompt tokens | 1 | 4 | 8 | 16 | 32 | 48 |
+|---|---|---|---|---|---|---|
+| Qwen 3.6, experts per layer picked (of 256) | 3% | 9% | 14% | 21% | 31% | 37% |
+| Gemma 4 (of 128) | 6% | 17% | 27% | 35% | 46% | 51% |
+
+`mul_mat_id` reads only the experts picked, so a stream buffer needs only those. Each buffer now tracks
+which experts it holds. At layer L's router input, the predictor routes every token of the batch through
+layer L+1's router and reads the union of their top-k into L+1's buffer while L computes; at L+1's
+callback whatever was picked but not predicted is copied from a slot or read first in the queue.
+A sequence number drops guesses that arrive after the graph moved on, so a guess cannot write into a
+buffer in use. The last layer no longer preloads layer 0, which decode never used (0.5 GB per prompt).
+
+Reading only what was picked, without prediction, halved short prompts but lost 14% at 279 tokens (no
+overlap with compute). With prediction it wins at every length tried, so whole layers are now only for
+`--stream-full` / `MOE_STREAM_FULL` (default 1 with the predictor, 0.5 without). Single runs, Qwen 8 GB:
+756 tokens (two batches) 25.1 -> 22.4 s, 39.0 -> 29.5 GB read.
+
+Interleaved, 3 rounds, 8 GB, cold cache, 64 tokens out (`prefill-ab.txt`), prefill seconds:
+
+| prompt | whole layers | predicted + picked | |
+|---|---|---|---|
+| Qwen story, 33 tokens | 11.37 | **4.85** | 2.3x |
+| Qwen code, 48 tokens | 11.18 | **5.26** | 2.1x |
+| Qwen notes, 279 tokens | 11.41 | **9.70** | 1.18x |
+| Gemma story, 34 tokens | 5.56 | **3.57** | 1.6x |
+| Gemma code, 49 tokens | 5.39 | **3.78** | 1.4x |
+
+Decode unchanged (within 1%), all 30 runs give their prompt's hash in both modes. llama-server, Qwen 8 GB,
+story prompt: 2.7 -> 5.1 tok/s prompt processing, same text.
+
+Batches above 512 tokens are not predicted (routing them would fall behind the graph); with the
+default -ub 512 that never happens. Caveats: one machine; the predictor's routing of a 279-token batch
+costs ~10 ms per layer of one core.
+
 ## Next step options (updated)
 
 - **Bundled sidecar for Gemma 4** (needs ~9 GB of disk): one request per miss instead of two, which
   Results 8 measured at 1.5x on OLMoE. Decode still waits 46 ms/token on misses.
 - **Cheaper wrong guesses**: prefetch only into free or cold slots, or into a small separate pool, so a
-  mispredicted expert cannot evict a hot one; and run the routing math off the graph thread.
+  mispredicted expert cannot evict a hot one; wrong guesses cost 30% more reads (Results 14).
 - **Server counters**: cache and stream stats per request in the server log.
-- **Prefetch on Qwen**: Gemma's 66-70% prediction hit rate lost (Results 10), but Qwen waits 42-124
-  ms/token on misses (Results 12), so a correct guess is worth more there. One flag to measure.
-- **Eviction policy**: LRU today. Replay recorded routing traces (`moe-trace`) against LRU, LFU and
-  frequency-weighted LRU offline before changing the cache; each miss avoided is ~1.6 ms on Qwen.
-- **More reads in flight**: a miss is three sequential reads on one thread (one per expert tensor).
-  Split them into three jobs now; io_uring later, so one thread holds the QD 4-8 the drive wants.
-- **Hybrid prefill**: for short prompts, read only the experts the batch picked that are not already in
-  the slots, instead of streaming all of them; Qwen's prefill reads 20 GB per prompt and waits on I/O
-  for 64% of it (Results 12).
-- **Compiler**: clang vs GCC on Linux, clang-cl vs MSVC on Windows; may explain the Windows/Linux gap
-  (Results 11) and is free if it holds.
+- **io_uring / IOCP**: misses are one job per tensor now (Results 14) and more threads did not help;
+  async I/O would cut thread handoffs, not add bandwidth. Low priority.
+- **Windows/Linux gap**: not the compiler on Linux (Results 16); clang-cl vs MSVC on Windows, or the
+  Windows I/O path, are what is left.
 - **Shared expert during the miss wait**: Qwen's shared expert does not depend on routing; computing it
   while misses load hides I/O. Needs a graph change in llama.cpp, so last.
 - **K=4 + quant sweep** (cheap, no code): `--override-kv` for K, IQ4_XS/Q3_K_M
@@ -834,3 +954,10 @@ the rest of the system needs grows with RAM; that is one 16 GB machine's worth o
   `qwen35moe`. Bit-exact; 1.9-4.2x mmap's decode from unlimited down to 6 GB (Results 12).
 - 2026-10-13 (later) — `--cache-slots auto` / `MOE_CACHE_SLOTS=auto`: sizes from cgroup memory.max or
   MemAvailable less 15%; tuned over four rounds, final version 3 runs per cell (Results 13).
+- 2026-10-13 (later) — prefetch on by default with the cache: vectorized routing on a predictor thread,
+  one read job per expert tensor, `MOE_PREFETCH_DEPTH` in llama-server. +8-28% decode at 6-8 GB,
+  bit-exact (Results 14).
+- 2026-10-13 (later) — eviction: traces replayed offline, decayed LFU (half-life 8 tokens) is the new
+  default, +1-6% decode (Results 15). clang vs GCC: no difference (Results 16).
+- 2026-10-13 (later) — prefill reads the predicted and picked experts instead of whole layers: 1.2-2.3x
+  faster prompts, bit-exact (Results 17).

@@ -182,7 +182,11 @@ makes the non-expert weights fault, which can be slower than no cache at all
 | `MOE_IO_THREADS` | 2 | |
 | `MOE_CACHE_MAX_TOKENS` | slots / experts per token | batches up to this size use the slots |
 | `MOE_STREAM_PREFILL` | 1 | larger batches stream layers; 0 = they use the mmap |
+| `MOE_STREAM_FULL` | 1 with prefetch, else 0.5 | share of a layer's experts a batch must pick to load the next layer whole; below it, only predicted and picked experts are read |
 | `MOE_EXPERTS_FILE` | - | bundled sidecar for slot misses |
+| `MOE_PREFETCH_DEPTH` | 1 | layers ahead the stale router prefetches; 0 = off |
+| `MOE_PREFETCH_WIDTH` | experts per token | experts prefetched per layer |
+| `MOE_CACHE_LFU` | 8 | eviction: fewest uses, decayed by half every N tokens; 0 = LRU |
 
 ```powershell
 $env:MOE_CACHE_SLOTS = "auto"; $env:MOE_IO_THREADS = 4
