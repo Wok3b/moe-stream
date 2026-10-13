@@ -1,0 +1,47 @@
+name: Bug report
+description: Something broke, ran slower than expected, or gave different tokens
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact command, e.g. `./run.sh gemma --mem 8` or the full `llama-moe-run` line.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model file
+      placeholder: gemma-4-26B-A4B-it-UD-IQ3_S.gguf
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware
+      description: CPU, RAM and the drive the model is on.
+      placeholder: Ryzen 5 7430U, 16 GB, Solidigm NVMe
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and compiler
+      placeholder: Arch Linux, GCC 16.2 / Windows 11, MSVC 14.51
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: >-
+        The `expert_cache:` lines and any error. For different output, the `tokens hash`
+        from `llama-moe-run` with and without `--cache-slots`, same prompt.
+      render: text

@@ -1,0 +1,42 @@
+# Builds the four tools on Linux and Windows. No model is downloaded, so this checks the
+# build, not the numbers: those come from bench/ on real hardware (docs/NOTES.md).
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Build
+        run: ./build.sh
+      - name: Check the binaries and run.sh
+        run: |
+          for t in llama-moe-run llama-moe-trace llama-moe-bundle llama-server; do
+            test -x llama.cpp/build/bin/$t
+          done
+          sh -n run.sh
+          ./run.sh --help | grep -q "usage: ./run.sh"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build
+        run: .\build.ps1
+      - name: Check the binaries
+        run: |
+          foreach ($t in 'llama-moe-run', 'llama-moe-trace', 'llama-moe-bundle', 'llama-server') {
+            if (-not (Test-Path "llama.cpp\build\bin\Release\$t.exe")) { throw "missing $t.exe" }
+          }

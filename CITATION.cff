@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use moe-stream in your work, please cite it as below."
+title: "moe-stream: Mixture-of-Experts models bigger than RAM, streamed from SSD"
+type: software
+authors:
+  - alias: Wok3b
+version: 0.1.0
+date-released: 2026-10-14
+license: MIT
+repository-code: "https://github.com/Wok3b/moe-stream"
+abstract: >-
+  An explicit expert cache for llama.cpp that runs Mixture-of-Experts models
+  from an NVMe SSD on a 16 GB laptop, CPU only. Experts are read into locked
+  slots with unbuffered I/O, predicted one layer ahead with the next layer's
+  router, and evicted by decayed use counts, instead of being demand-paged by
+  the operating system. Output is bit-exact with llama.cpp's mmap path.
+  Qwen3.6-35B-A3B (20.6 GiB) decodes at 6.4 tok/s in an 8 GB memory budget,
+  against 1.6 tok/s memory-mapped.
+keywords:
+  - mixture-of-experts
+  - llama.cpp
+  - llm-inference
+  - expert offloading
+  - nvme
+  - gguf

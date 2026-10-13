@@ -1,5 +1,9 @@
 # moe-stream
 
+[![build](https://github.com/Wok3b/moe-stream/actions/workflows/build.yml/badge.svg)](https://github.com/Wok3b/moe-stream/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/Wok3b/moe-stream)](https://github.com/Wok3b/moe-stream/releases)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **Bigger than your RAM. Faster than mmap. Bit-exact.**
 
 moe-stream runs Mixture-of-Experts models from an SSD on an ordinary laptop: no
@@ -205,3 +209,7 @@ Apple Silicon with MLX. The ideas it builds on are credited in
 [docs/NOTES.md](docs/NOTES.md): Pre-gated MoE, LLM in a flash, PowerInfer-2,
 MoE-Infinity, Fiddler, ExpertFlow, HOBBIT, and llama.cpp itself, which is the
 baseline every number here is measured against.
+
+## License
+
+MIT, see [LICENSE](LICENSE). The llama.cpp submodule is MIT as well.
