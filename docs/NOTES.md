@@ -672,6 +672,60 @@ Caveats: one prompt, short output, one run per cell (the warm mmap runs show run
 Desktop session running (browser, terminal, ~4 GB). mmap's cold numbers include the model's first read
 from disk, which a long-running server pays once; the warm row is the fair decode comparison.
 
+## Results 12 — Qwen3.6-35B-A3B: a model twice the size of RAM (2026-10-13)
+
+`unsloth/Qwen3.6-35B-A3B-GGUF`, `UD-Q4_K_M`, 20.6 GiB (SHA256 checked) on the 15.4 GB laptop: 40 MoE
+layers, 256 experts, top-8, three expert tensors (Q4_K up/gate 576 KiB, Q5_K down 704 KiB; 1.81 MiB per
+expert, 72.5 MiB per slot across layers), 18.1 GiB of experts and ~2.5 GiB of everything else. Arch
+`qwen35moe` (linear-attention layers included) runs at the pin with no new llama.cpp patch.
+
+One fix in `moe-run`: the prefetcher read `ffn_norm` for every MoE layer, which Qwen 3.5/3.6 does not
+have, and crashed at init even with prefetch off. It now routes on `rms_norm(attn_residual) *
+attn_post_norm` for this arch (`models/qwen35moe.cpp`), and any architecture without a known router
+input gets prefetch disabled with a warning instead of a crash.
+
+Prompt: the same story request rendered with Qwen's template, thinking off
+(`bench/prompts/qwen36-story.txt`, 33 tokens). Same harness as Results 11 (`bench/mem-budget.sh`,
+`MODEL`/`PROMPT`/`SLOTS`/`TAG`), cold model file every run, 128 tokens out.
+
+**Bit-exact:** mmap, 32, 64 and 96 slots + stream give `cc86c28936a61b2d` at 64 tokens; all 13 budget
+runs give `89be017abcab1043` at 128.
+
+| budget | mmap decode | mmap wall | 32 slots + stream | 64 slots + stream | 96 slots + stream |
+|---|---|---|---|---|---|
+| 6 GB | 0.82 (42752 majflt/tok) | 192 s | **3.42** (97 majflt/tok), 50 s | - | - |
+| 8 GB | 1.58 (20454) | 117 s | **4.25** (0), 43 s | - | - |
+| 10 GB | 2.42 (11778) | 89 s | 4.24, 43 s | **5.79**, 35 s | - |
+| 12 GB | 3.41 (7380) | 74 s | - | 5.60, 35 s | **6.47**, 33 s |
+| none | 3.53 (6999) | 72 s | - | 5.80, 35 s | **6.77**, 32 s |
+
+Slot counts per budget are the ones whose total (slots x 72.5 MiB + 996 MiB stream + 2.5 GiB dense +
+KV) fits; 32 slots at 6 GB is just over the line, hence 97 major faults/token on the dense weights.
+
+| slots | misses/token | read MB/token | wait ms/token |
+|---|---|---|---|
+| 32 | 86.7 | ~160 | 124 |
+| 64 | 41.6 | ~77 | 64 |
+| 96 | 25.8 | 49 | 42 |
+
+What it shows:
+
+- **The case the project is for.** mmap cannot hold this model at any budget on this machine, and it
+  degrades with the budget: 3.5 tok/s unlimited down to 0.82 at 6 GB. moe-stream runs it at 3.4-6.8
+  tok/s: **4.2x mmap at 6 GB, 2.7x at 8 GB, 2.4x at 10 GB, 1.9x unlimited**, with 0.1 major faults per
+  token and the same tokens. End to end (wall, including load and prefill) it is 2.1-3.8x.
+- **Slots keep paying here.** Gemma 4 saturated at 64 slots (128 experts); with 256 experts, 96 slots
+  still halves the misses of 64, and decode is still I/O-bound at 42 ms/token of waiting. The
+  `--cache-slots auto` from Results 11 should take as many slots as the budget allows.
+- **Prefill is now I/O-bound.** Streaming reads all 20 GB per prompt (41 layer loads) at ~1.8 GB/s
+  aggregate with 4 threads, and the graph waited 7.1 of 11.1 s: 3.0 tok/s against mmap's 1.0, but a
+  33-token prompt touches nearly every expert anyway (264 picks per layer over 256 experts). For short
+  prompts, a hybrid (slots for experts already cached, stream the rest) would read less.
+
+Caveats as in Results 11: one prompt, one run per cell, short output, desktop session running. Each
+expert is still three reads (0.64 MB each); the bundled sidecar would make it one, but needs another
+18 GB of disk.
+
 ## Next step options (updated)
 
 - **Bundled sidecar for Gemma 4** (needs ~9 GB of disk): one request per miss instead of two, which
@@ -723,3 +777,5 @@ from disk, which a long-running server pays once; the warm row is the fair decod
 - 2026-10-13 (later) — Arch on the same laptop: tools ported to Linux (O_DIRECT, mlock, madvise,
   mincore, getrusage), bit-exact across mmap / slots / stream. cgroup budget sweep 6-12 GB (Results 11):
   2x mmap's decode at 8 GB, 2.9x at 6 GB with 32 slots. Raw numbers in `bench/results/linux/`.
+- 2026-10-13 (later) — Qwen3.6-35B-A3B UD-Q4_K_M (20.6 GiB) downloaded; prefetcher init fixed for
+  `qwen35moe`. Bit-exact; 1.9-4.2x mmap's decode from unlimited down to 6 GB (Results 12).

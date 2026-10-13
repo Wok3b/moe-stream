@@ -161,7 +161,9 @@ struct prefetcher {
     void init(const llama_model * model) {
         const auto & hp = model->hparams;
         n_layer  = (int) model->layers.size(); // hparams.n_layer() is not exported from the DLL
-        inp_name = model->arch == LLM_ARCH_GEMMA4 ? "attn_out" : "ffn_inp"; // residual entering the FFN
+        // residual entering the FFN
+        inp_name = model->arch == LLM_ARCH_GEMMA4     ? "attn_out" :
+                   model->arch == LLM_ARCH_QWEN35MOE ? "attn_residual" : "ffn_inp";
         n_embd   = (int) hp.n_embd;
         n_expert = (int) hp.n_expert;
         k        = (int) hp.n_expert_used_arr[0];
@@ -196,8 +198,16 @@ struct prefetcher {
                 for (auto & v : w.norm) {
                     v /= sqrtf((float) n_embd);
                 }
-            } else {
+            } else if (model->arch == LLM_ARCH_QWEN35MOE) {
+                w.norm = to_f32(L.attn_post_norm); // models/qwen35moe.cpp: routes on rms_norm(attn_residual)
+            } else if (L.ffn_norm) {
                 w.norm = to_f32(L.ffn_norm);
+            } else {
+                // unknown router input: the cache still works, prediction cannot
+                if (depth > 0) {
+                    LOG_WRN("prefetcher: layer %d has no ffn_norm, prefetch disabled for this architecture\n", il);
+                    depth = 0;
+                }
             }
             if (L.ffn_exp_probs_b) {
                 w.probs_b = to_f32(L.ffn_exp_probs_b);
