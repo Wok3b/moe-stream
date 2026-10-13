@@ -1,0 +1,66 @@
+diff --git a/include/llama.h b/include/llama.h
+index 6871f4a00..b45ed313d 100644
+--- a/include/llama.h
++++ b/include/llama.h
+@@ -216,6 +216,9 @@ extern "C" {
+     // graph runs the expert matmuls on `cache`, addressed by the "ffn_moe_slot_ids-<il>" tensor,
+     // which the runtime rewrites in place (expert id -> slot) from its eval callback.
+     LLAMA_API void llama_expert_cache_register(const struct ggml_tensor * orig, struct ggml_tensor * cache, int32_t max_tokens);
++    // moe-stream: for batches above max_tokens, run on `stream` instead: same shape as `orig`, all experts, which
++    // the runtime fills before the layer runs. "ffn_moe_slot_ids-<il>" keeps the real expert ids in this case.
++    LLAMA_API void llama_expert_cache_register_stream(const struct ggml_tensor * orig, struct ggml_tensor * stream);
+     LLAMA_API void llama_expert_cache_clear(void);
+ 
+     LLAMA_API const char * llama_load_mode_name(enum llama_load_mode load_mode);
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 24e4b4c83..7cff720a9 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -2001,8 +2001,9 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+ // moe-stream: expert cache registry (see tools/moe-run and docs/NOTES.md)
+ namespace {
+ struct expert_cache_entry {
+-    ggml_tensor * cache;
+-    int32_t       max_tokens;
++    ggml_tensor * cache      = nullptr;
++    int32_t       max_tokens = 0;
++    ggml_tensor * stream     = nullptr; // batches above max_tokens
+ };
+ std::unordered_map<const ggml_tensor *, expert_cache_entry> g_expert_cache;
+ std::mutex g_expert_cache_mutex;
+@@ -2013,16 +2014,23 @@ ggml_tensor * expert_cache_lookup(const ggml_tensor * orig, int64_t n_tokens) {
+     }
+     std::lock_guard<std::mutex> lock(g_expert_cache_mutex);
+     const auto it = g_expert_cache.find(orig);
+-    if (it == g_expert_cache.end() || n_tokens > it->second.max_tokens) {
++    if (it == g_expert_cache.end()) {
+         return nullptr;
+     }
+-    return it->second.cache;
++    return n_tokens <= it->second.max_tokens ? it->second.cache : it->second.stream;
+ }
+ } // namespace
+ 
+ void llama_expert_cache_register(const ggml_tensor * orig, ggml_tensor * cache, int32_t max_tokens) {
+     std::lock_guard<std::mutex> lock(g_expert_cache_mutex);
+-    g_expert_cache[orig] = { cache, max_tokens };
++    auto & e = g_expert_cache[orig];
++    e.cache      = cache;
++    e.max_tokens = max_tokens;
++}
++
++void llama_expert_cache_register_stream(const ggml_tensor * orig, ggml_tensor * stream) {
++    std::lock_guard<std::mutex> lock(g_expert_cache_mutex);
++    g_expert_cache[orig].stream = stream;
+ }
+ 
+ void llama_expert_cache_clear(void) {
+@@ -2207,6 +2215,8 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
+     // small enough to be served from them, run the expert matmuls on the cache tensors addressed by
+     // slot ids. The runtime rewrites "ffn_moe_slot_ids" in place (expert id -> slot) from its eval
+     // callback, after loading any missing experts. Biases, per-expert scales and LoRA keep the real expert ids.
++    // Larger batches run on the layer's stream tensor (all experts) if one is registered; the callback then
++    // only waits for the layer to be loaded and leaves the ids alone.
+     ggml_tensor * mm_ids = selected_experts;
+     {
+         ggml_tensor * c_up      = expert_cache_lookup(up_exps,      n_tokens);

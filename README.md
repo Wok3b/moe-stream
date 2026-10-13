@@ -149,12 +149,20 @@ K sweep, and the expert-bundled layout. Results 1 to 8 in
 [docs/NOTES.md](docs/NOTES.md) have the numbers in the order they were taken,
 including what did not work and why.
 
+**Gemma 4 26B-A4B and llama-server** (Results 9 and 10, 2026-10-13, a second
+laptop): the cache runs bit-exact on Gemma 4 (patch 0003, per-expert scales),
+inside `llama-server` (0004), and prompt processing now streams whole layers
+through two buffers instead of paging every expert in (0005). Gemma 4 does have
+a hot set: 64 of 128 slots serve 96% of decode lookups. In a real grading
+workload the moe-stream server ties mmap on wall time while leaving ~0.9 GB of
+RAM free instead of tens of MB. The stale-router prefetcher is a net loss on
+this model (66-70% prediction accuracy).
+
 Open, in the order it matters:
 
-1. **A real target model.** Everything so far is a 6.9B control that fits in
-   RAM. A 30B-class MoE has more experts, often a shared expert that is always
-   resident, and possibly a less flat popularity curve, which could change the
-   conclusion that cache policy does not matter.
+1. **A model that does not fit.** Gemma 4 IQ3_S (10.5 GiB) nearly fits in
+   16 GB, so streaming ties mmap there; a 13 GiB QAT quant or a 20 GiB
+   Qwen3.5-35B-A3B is where it should win outright.
 2. **Asynchronous I/O.** The reader is synchronous per thread, so queue depth
    equals thread count; the drive wants 2 to 4 from a single issuer.
 3. **Linux.** The patches are platform-neutral, the I/O path is Win32 only.

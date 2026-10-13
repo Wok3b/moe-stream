@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-13T09:09:48",
+  "file": "gemma-4-26B-A4B-it-UD-IQ3_S.gguf",
+  "file_bytes": 11289671136,
+  "total_mb_per_test": 1024,
+  "note": "unbuffered reads (FILE_FLAG_NO_BUFFERING), so these are device rates",
+  "tests": [
+    {
+      "pattern": "sequential 8 MB  QD1",
+      "chunk_bytes": 8388608,
+      "queue_depth": 1,
+      "sequential": true,
+      "mb_s": 1284.2,
+      "ms_per_request": 6.532
+    },
+    {
+      "pattern": "random 2 MB    QD1",
+      "chunk_bytes": 2097152,
+      "queue_depth": 1,
+      "sequential": false,
+      "mb_s": 961.3,
+      "ms_per_request": 2.182
+    },
+    {
+      "pattern": "random 2 MB    QD4",
+      "chunk_bytes": 2097152,
+      "queue_depth": 4,
+      "sequential": false,
+      "mb_s": 1339.3,
+      "ms_per_request": 6.263
+    },
+    {
+      "pattern": "random 2 MB    QD8",
+      "chunk_bytes": 2097152,
+      "queue_depth": 8,
+      "sequential": false,
+      "mb_s": 1301.7,
+      "ms_per_request": 12.889
+    },
+    {
+      "pattern": "random 256 KB   QD1",
+      "chunk_bytes": 262144,
+      "queue_depth": 1,
+      "sequential": false,
+      "mb_s": 577.1,
+      "ms_per_request": 0.454
+    },
+    {
+      "pattern": "random 256 KB   QD8",
+      "chunk_bytes": 262144,
+      "queue_depth": 8,
+      "sequential": false,
+      "mb_s": 1132.8,
+      "ms_per_request": 1.851
+    },
+    {
+      "pattern": "random 64 KB   QD1",
+      "chunk_bytes": 65536,
+      "queue_depth": 1,
+      "sequential": false,
+      "mb_s": 255.1,
+      "ms_per_request": 0.257
+    },
+    {
+      "pattern": "random 64 KB   QD8",
+      "chunk_bytes": 65536,
+      "queue_depth": 8,
+      "sequential": false,
+      "mb_s": 686.2,
+      "ms_per_request": 0.764
+    },
+    {
+      "pattern": "random 4 KB    QD1",
+      "chunk_bytes": 4096,
+      "queue_depth": 1,
+      "sequential": false,
+      "mb_s": 26.4,
+      "ms_per_request": 0.155
+    },
+    {
+      "pattern": "random 4 KB    QD8",
+      "chunk_bytes": 4096,
+      "queue_depth": 8,
+      "sequential": false,
+      "mb_s": 117.7,
+      "ms_per_request": 0.278
+    }
+  ]
+}

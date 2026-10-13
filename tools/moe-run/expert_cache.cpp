@@ -19,6 +19,7 @@
 
 namespace {
 constexpr size_t SECTOR = 4096; // unbuffered I/O alignment
+constexpr size_t STREAM_CHUNK = 4u << 20; // layer streaming: request size, one job each
 
 int64_t now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -43,17 +44,25 @@ expert_cache::~expert_cache() {
     if (ctx) {
         ggml_free(ctx);
     }
+    if (sbuf) {
+        ggml_backend_buffer_free(sbuf);
+    }
+    if (sctx) {
+        ggml_free(sctx);
+    }
 }
 
 bool expert_cache::init(const llama_model * model, const std::string & gguf_path, const expert_cache_params & params) {
-    p    = params;
-    path = gguf_path;
+    p         = params;
+    path      = gguf_path;
+    gguf_file = gguf_path;
     n_expert = (int) model->hparams.n_expert;
     if (p.slots > n_expert) {
         p.slots = n_expert;
     }
     const int n_layer = (int) model->layers.size();
     layers.resize(n_layer);
+    moe_ord.assign(n_layer, -1);
 
     // absolute file offsets of the expert tensors
     gguf_init_params gp = { /*no_alloc*/ true, /*ctx*/ nullptr };
@@ -98,11 +107,22 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
             layers[il].tensors.push_back(ts);
             n_tensors++;
         }
+        moe_ord[il] = (int) moe_layers.size();
+        moe_layers.push_back(il);
     }
     gguf_free(gctx);
     if (n_tensors == 0) {
         LOG_ERR("expert_cache: no MoE expert tensors found\n");
         return false;
+    }
+
+    // a batch must never need more distinct experts in a layer than there are slots, or on_slot_ids
+    // waits forever for an evictable slot
+    const int n_used   = std::max(1, (int) model->hparams.n_expert_used_arr[moe_layers[0]]);
+    const int max_safe = std::max(1, p.slots / n_used);
+    p.max_tokens = p.max_tokens <= 0 ? max_safe : std::min(p.max_tokens, max_safe);
+    if (p.stream_prefill) {
+        max_read = std::max(max_read, STREAM_CHUNK);
     }
 
     // cache tensors: same type and matrix shape, `slots` experts deep
@@ -134,14 +154,22 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
         }
     }
 
+    if (p.stream_prefill) {
+        if (!init_stream()) {
+            return false;
+        }
+        // with the experts streamed, the non-expert weights are what the first prompt would fault in 4 KiB at a time
+        prefetch_dense(model);
+    }
+
 #ifdef _WIN32
     if (p.lock_memory) {
-        void * base = ggml_backend_buffer_get_base(buf);
-        const size_t size = bytes_total;
+        const size_t size = bytes_total + bytes_stream;
         // VirtualLock is bounded by the minimum working set, raise it first
         if (!SetProcessWorkingSetSizeEx(GetCurrentProcess(), size + (512u << 20), size + (2048u << 20),
                                         QUOTA_LIMITS_HARDWS_MIN_ENABLE | QUOTA_LIMITS_HARDWS_MAX_DISABLE) ||
-            !VirtualLock(base, size)) {
+            !VirtualLock(ggml_backend_buffer_get_base(buf), bytes_total) ||
+            (sbuf && !VirtualLock(ggml_backend_buffer_get_base(sbuf), bytes_stream))) {
             LOG_WRN("expert_cache: could not lock %zu MiB of cache memory (error %lu); it may be paged out under pressure\n",
                     size >> 20, GetLastError());
         }
@@ -156,9 +184,13 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
         bundled = true;
     }
 
-    for (auto & L : layers) {
-        for (auto & ts : L.tensors) {
+    for (int il = 0; il < n_layer; ++il) {
+        for (size_t i = 0; i < layers[il].tensors.size(); ++i) {
+            const auto & ts = layers[il].tensors[i];
             llama_expert_cache_register(ts.orig, ts.cache, p.max_tokens);
+            if (sbuf) {
+                llama_expert_cache_register_stream(ts.orig, stream_t[il][i]);
+            }
         }
     }
 
@@ -168,6 +200,56 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
     LOG_INF("expert_cache: %d slots/layer x %d tensors, %zu MiB locked, %d I/O threads, %s layout, request %zu KiB\n",
             p.slots, n_tensors, bytes_total >> 20, p.io_threads,
             bundled ? "bundled" : "split", max_read >> 10);
+    LOG_INF("expert_cache: batches up to %d tokens use the slots; larger ones %s\n", p.max_tokens,
+            sbuf ? "stream whole layers through 2 buffers" : "use the mmap");
+    if (sbuf) {
+        LOG_INF("expert_cache: stream buffers 2 x %.1f MiB, %zu MiB locked\n",
+                bytes_stream / 2 / 1048576.0, bytes_stream >> 20);
+    }
+    return true;
+}
+
+// Two buffers, each big enough for every expert of one layer. MoE layer k lives in buffer k % 2, so
+// layer k + 1 can load while layer k computes. The views alias: layers 0, 2, 4, ... share buffer 0.
+bool expert_cache::init_stream() {
+    ggml_backend_buffer_type_t buft = ggml_backend_cpu_buffer_type();
+    const size_t align = ggml_backend_buft_get_alignment(buft);
+    size_t layer_bytes = 0;
+    size_t n_tensors   = 0;
+    for (int il : moe_layers) {
+        size_t sz = 0;
+        for (const auto & ts : layers[il].tensors) {
+            sz += GGML_PAD(ggml_nbytes(ts.orig), align);
+            n_tensors++;
+        }
+        layer_bytes = std::max(layer_bytes, sz);
+    }
+    sbuf = ggml_backend_buft_alloc_buffer(buft, 2 * layer_bytes);
+    if (!sbuf) {
+        LOG_ERR("expert_cache: cannot allocate 2 x %zu MiB of stream buffers\n", layer_bytes >> 20);
+        return false;
+    }
+    bytes_stream = ggml_backend_buffer_get_size(sbuf);
+
+    ggml_init_params ip = { ggml_tensor_overhead() * n_tensors + 1024, nullptr, /*no_alloc*/ true };
+    sctx = ggml_init(ip);
+    char * base = (char *) ggml_backend_buffer_get_base(sbuf);
+    stream_t.assign(layers.size(), {});
+    for (size_t k = 0; k < moe_layers.size(); ++k) {
+        const int il = moe_layers[k];
+        char * at = base + (k % 2) * layer_bytes;
+        for (const auto & ts : layers[il].tensors) {
+            ggml_tensor * t = ggml_new_tensor_3d(sctx, ts.orig->type, ts.orig->ne[0], ts.orig->ne[1], ts.orig->ne[2]);
+            ggml_format_name(t, "stream.%s", ggml_get_name(ts.orig));
+            if (ggml_backend_tensor_alloc(sbuf, t, at) != GGML_STATUS_SUCCESS) {
+                LOG_ERR("expert_cache: cannot place %s in a stream buffer\n", ggml_get_name(t));
+                return false;
+            }
+            GGML_ASSERT(t->nb[2] == ts.bytes_per_expert && ggml_nbytes(t) == ggml_nbytes(ts.orig));
+            stream_t[il].push_back(t);
+            at += GGML_PAD(ggml_nbytes(ts.orig), align);
+        }
+    }
     return true;
 }
 
@@ -292,6 +374,143 @@ void expert_cache::submit(int il, int expert, int slot, bool urgent) {
     cv_jobs.notify_one();
 }
 
+void expert_cache::on_ids(int il, int32_t * ids, int64_t n_used, int64_t n_tokens, uint64_t token) {
+    if (n_tokens > p.max_tokens) {
+        // build_moe_ffn only routes such batches here when the stream views are registered
+        on_stream_ids(il, ids, (int) (n_used * n_tokens), token);
+        return;
+    }
+    on_slot_ids(il, ids, (int) (n_used * n_tokens), token);
+}
+
+// The stream views hold every expert at its own index, so the ids stay as they are.
+void expert_cache::on_stream_ids(int il, const int32_t * ids, int n, uint64_t token) {
+    std::unique_lock<std::mutex> lk(mu);
+    const int64_t t0 = now_ns();
+    const int k = moe_ord[il];
+    const int b = k % 2;
+    if (sb[b].il != il) {
+        // nothing loaded this layer ahead of time (first layer of a batch): load it now
+        cv.wait(lk, [&] { return sb[b].pending == 0; });
+        submit_stream(il, b, /*urgent*/ true);
+        stats.stream_sync++;
+    }
+    cv.wait(lk, [&] { return sb[b].pending == 0; });
+
+    // the other buffer holds the previous layer, whose expert matmuls ran before this callback.
+    // After the last layer this loads layer 0 for the next batch.
+    const int kn = (k + 1) % (int) moe_layers.size();
+    const int bn = kn % 2;
+    if (bn != b && sb[bn].il != moe_layers[kn] && sb[bn].pending == 0) {
+        submit_stream(moe_layers[kn], bn, /*urgent*/ false);
+    }
+    stats.ns_stream_wait += now_ns() - t0;
+
+    seed_slots(il, ids, n, token, lk);
+}
+
+// The prompt's experts are in RAM in the stream buffer anyway: copy the ones it used most into the slots,
+// so decode does not start from an empty cache. Most used last, so they are also the most recent.
+// caller holds mu through lk; the copies run unlocked on slots marked LOADING.
+void expert_cache::seed_slots(int il, const int32_t * ids, int n, uint64_t token, std::unique_lock<std::mutex> & lk) {
+    auto & L = layers[il];
+    const int64_t t0 = now_ns();
+    std::vector<int> count(n_expert, 0);
+    for (int i = 0; i < n; ++i) {
+        count[ids[i]]++;
+    }
+    std::vector<int> order;
+    for (int e = 0; e < n_expert; ++e) {
+        if (count[e] > 0) {
+            order.push_back(e);
+        }
+    }
+    std::sort(order.begin(), order.end(), [&](int x, int y) { return count[x] > count[y]; });
+    if ((int) order.size() > p.slots) {
+        order.resize(p.slots);
+    }
+    std::reverse(order.begin(), order.end());
+
+    std::vector<std::pair<int, int>> copies; // expert, slot
+    for (int e : order) {
+        int s = L.expert_slot[e];
+        if (s < 0) {
+            s = alloc_slot(L, token);
+            if (s < 0) {
+                continue;
+            }
+            L.state[s]       = LOADING;
+            L.slot_expert[s] = e;
+            L.expert_slot[e] = s;
+            copies.emplace_back(e, s);
+        }
+        L.used_token[s] = token;
+        L.last_use[s]   = ++clock;
+    }
+    if (copies.empty()) {
+        return;
+    }
+    lk.unlock();
+    for (const auto & [e, s] : copies) {
+        for (size_t i = 0; i < L.tensors.size(); ++i) {
+            const size_t bpe = L.tensors[i].bytes_per_expert;
+            memcpy((char *) L.tensors[i].cache->data + (size_t) s * bpe, (const char *) stream_t[il][i]->data + (size_t) e * bpe, bpe);
+        }
+    }
+    lk.lock();
+    for (const auto & [e, s] : copies) {
+        L.state[s] = READY;
+    }
+    stats.seeded  += (long long) copies.size();
+    stats.ns_seed += now_ns() - t0;
+    cv.notify_all();
+}
+
+void expert_cache::prefetch_dense(const llama_model * model) {
+#ifdef _WIN32
+    std::vector<WIN32_MEMORY_RANGE_ENTRY> ranges;
+    size_t bytes = 0;
+    for (const auto & [name, t] : model->tensors_by_name) {
+        if (name.find("_exps") != std::string::npos || !t->data || !t->buffer || !ggml_backend_buffer_is_host(t->buffer)) {
+            continue;
+        }
+        ranges.push_back({ t->data, ggml_nbytes(t) });
+        bytes += ggml_nbytes(t);
+    }
+    const int64_t t0 = now_ns();
+    if (!ranges.empty() && !PrefetchVirtualMemory(GetCurrentProcess(), ranges.size(), ranges.data(), 0)) {
+        LOG_WRN("expert_cache: PrefetchVirtualMemory failed (error %lu)\n", GetLastError());
+        return;
+    }
+    LOG_INF("expert_cache: prefetched %zu non-expert tensors, %zu MiB, in %.2fs\n", ranges.size(), bytes >> 20, (now_ns() - t0) / 1e9);
+#else
+    GGML_UNUSED(model);
+#endif
+}
+
+// caller holds mu
+void expert_cache::submit_stream(int il, int b, bool urgent) {
+    const auto & L = layers[il];
+    std::vector<job> js;
+    for (size_t i = 0; i < L.tensors.size(); ++i) {
+        const auto & ts = L.tensors[i];
+        const size_t total = ggml_nbytes(ts.orig);
+        for (size_t o = 0; o < total; o += STREAM_CHUNK) {
+            job j = { il, -1, -1 };
+            j.stream = b;
+            j.off    = ts.file_off + o;
+            j.len    = std::min(STREAM_CHUNK, total - o);
+            j.dst    = (char *) stream_t[il][i]->data + o;
+            js.push_back(j);
+        }
+    }
+    sb[b].il      = il;
+    sb[b].pending = (int) js.size();
+    jobs.insert(urgent ? jobs.begin() : jobs.end(), js.begin(), js.end());
+    stats.stream_layers++;
+    cv_jobs.notify_all();
+}
+
 void expert_cache::on_slot_ids(int il, int32_t * ids, int n, uint64_t token) {
     auto & L = layers[il];
     std::unique_lock<std::mutex> lk(mu);
@@ -402,6 +621,28 @@ bool expert_cache::read_expert(void * handle, char * staging, const layer_state 
 #endif
 }
 
+bool expert_cache::read_range(void * handle, char * staging, uint64_t off, size_t len, char * dst) {
+#ifdef _WIN32
+    const uint64_t a0 = off & ~(uint64_t) (SECTOR - 1);
+    const uint64_t a1 = (off + len + SECTOR - 1) & ~(uint64_t) (SECTOR - 1);
+    LARGE_INTEGER li;
+    li.QuadPart = (LONGLONG) a0;
+    if (!SetFilePointerEx(handle, li, nullptr, FILE_BEGIN)) {
+        return false;
+    }
+    DWORD got = 0;
+    if (!ReadFile(handle, staging, (DWORD) (a1 - a0), &got, nullptr) || got < (off - a0) + len) {
+        return false;
+    }
+    memcpy(dst, staging + (off - a0), len);
+    stats.stream_bytes += len;
+    return true;
+#else
+    GGML_UNUSED(handle); GGML_UNUSED(staging); GGML_UNUSED(off); GGML_UNUSED(len); GGML_UNUSED(dst);
+    return false;
+#endif
+}
+
 void expert_cache::bench(int n) {
 #ifdef _WIN32
     HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, nullptr);
@@ -467,6 +708,17 @@ void expert_cache::io_loop() {
         LOG_ERR("expert_cache: cannot open %s for unbuffered reads (error %lu)\n", path.c_str(), GetLastError());
         return;
     }
+    // with a sidecar, h reads bundles; stream chunks always come from the GGUF
+    HANDLE hg = h;
+    if (sbuf && gguf_file != path) {
+        hg = CreateFileA(gguf_file.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                         FILE_FLAG_NO_BUFFERING, nullptr);
+        if (hg == INVALID_HANDLE_VALUE) {
+            LOG_ERR("expert_cache: cannot open %s for unbuffered reads (error %lu)\n", gguf_file.c_str(), GetLastError());
+            CloseHandle(h);
+            return;
+        }
+    }
     char * staging = (char *) VirtualAlloc(nullptr, max_read + 2 * SECTOR, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     for (;;) {
         job j;
@@ -478,6 +730,21 @@ void expert_cache::io_loop() {
             }
             j = jobs.front();
             jobs.pop_front();
+        }
+        if (j.stream >= 0) {
+            if (!read_range(hg, staging, j.off, j.len, j.dst)) {
+                LOG_ERR("expert_cache: stream read failed for layer %d at %llu (error %lu)\n",
+                        j.il, (unsigned long long) j.off, GetLastError());
+            }
+            bool done;
+            {
+                std::lock_guard<std::mutex> lk(mu);
+                done = --sb[j.stream].pending == 0;
+            }
+            if (done) {
+                cv.notify_all();
+            }
+            continue;
         }
         const int64_t t0 = now_ns();
         const bool ok = read_expert(h, staging, layers[j.il], j.expert, j.slot);
@@ -492,6 +759,9 @@ void expert_cache::io_loop() {
         cv.notify_all();
     }
     VirtualFree(staging, 0, MEM_RELEASE);
+    if (hg != h) {
+        CloseHandle(hg);
+    }
     CloseHandle(h);
 #endif
 }

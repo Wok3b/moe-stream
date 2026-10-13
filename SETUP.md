@@ -38,8 +38,14 @@ cd llama.cpp && git checkout 972d231 && cd ..
 cd llama.cpp
 git apply ../patches/0001-lazy-experts.patch
 git apply ../patches/0002-expert-cache-hook.patch
+git apply ../patches/0003-expert-scale-ids.patch
+git apply ../patches/0004-server-expert-cache.patch
+git apply ../patches/0005-expert-stream-prefill.patch
 cd ..
 ```
+
+Apply all five, in order: 0004 compiles `expert_cache.cpp` into the server, and
+that file calls the API 0005 adds.
 
 - `0001-lazy-experts.patch` — with `--lazy-mode on`, every `*_exps.weight`
   tensor is marked `TENSOR_READ_LAZY`, so the loader does not try to prefetch
@@ -47,6 +53,14 @@ cd ..
 - `0002-expert-cache-hook.patch` — adds `llama_expert_cache_register()` and
   makes `build_moe_ffn` run the expert matmuls against registered cache tensors
   addressed by a rewritable `ffn_moe_slot_ids-<il>` tensor.
+- `0003-expert-scale-ids.patch` — per-expert scales (Gemma 4's
+  `ffn_down_exps.scale`) and LoRA index by the real expert ids while the matmul
+  uses slot ids. Without it the cache stays off on such models.
+- `0004-server-expert-cache.patch` — `llama-server` gets the cache, configured
+  by environment variables (see 6c).
+- `0005-expert-stream-prefill.patch` — `llama_expert_cache_register_stream()`:
+  batches above the cache's `max_tokens` run on a per-layer stream tensor that
+  the runtime fills one layer ahead (Results 10).
 
 ### 3. Copy our tools into the tree and register them
 
@@ -56,6 +70,8 @@ cd ..
 
 This copies `tools/*` into `llama.cpp/examples/` and appends the
 `add_subdirectory(...)` lines. Re-run it after editing anything under `tools/`.
+Run it before configuring: patch 0004 builds the server from
+`examples/moe-run/expert_cache.cpp`.
 
 ### 4. Configure and build
 
@@ -130,6 +146,43 @@ same `-n`. If the hashes differ, the cache is serving wrong expert weights.
 ```powershell
 .\llama.cpp\build\bin\Release\llama-moe-run.exe -m C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf -p "The capital of France is" -n 32 -t 10 -lzm on
 ```
+
+### 6c. Instruct models, streamed prefill, and the server
+
+Instruct models such as Gemma 4 need their chat template; on a bare prompt they
+produce garbage and the hash check means nothing. Render one first:
+
+```powershell
+python bench\chat-prompt.py C:\models\<model>.gguf "Write a 400-word story about a lighthouse keeper who finds a message in a bottle." --out bench\prompts\story.txt
+```
+
+`moe-run` is greedy by default even when the GGUF carries
+`general.sampling.temp` (Gemma 4 does: 1.0). Streamed prefill, 64 slots:
+
+```powershell
+.\llama.cpp\build\bin\Release\llama-moe-run.exe -m C:\models\gemma-4-26B-A4B-it-UD-IQ3_S.gguf -f bench\prompts\gemma4-story.txt -n 256 -t 6 -c 16384 -lzm on --cache-slots 64 --io-threads 4 --stream-prefill
+```
+
+You should see a `stream:` line with layers loaded and how long the graph
+waited for them. The `tokens hash` must match the run without `--cache-slots`.
+
+`llama-server` reads its cache settings from the environment:
+
+| variable | default | |
+|---|---|---|
+| `MOE_CACHE_SLOTS` | 0 (off) | slots per layer |
+| `MOE_IO_THREADS` | 2 | |
+| `MOE_CACHE_MAX_TOKENS` | slots / experts per token | batches up to this size use the slots |
+| `MOE_STREAM_PREFILL` | 1 | larger batches stream layers; 0 = they use the mmap |
+| `MOE_EXPERTS_FILE` | - | bundled sidecar for slot misses |
+
+```powershell
+$env:MOE_CACHE_SLOTS = 64; $env:MOE_IO_THREADS = 4
+.\llama.cpp\build\bin\Release\llama-server.exe -m C:\models\gemma-4-26B-A4B-it-UD-IQ3_S.gguf -t 6 -c 16384 -lzm on
+```
+
+`bench\gguf-experts.py <model>` prints a model's expert tensors and bytes per
+expert, which is what sizes the slots and the stream buffers.
 
 ### 7. Reproduce the measurements
 

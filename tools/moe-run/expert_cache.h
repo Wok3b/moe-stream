@@ -18,11 +18,12 @@
 struct llama_model;
 
 struct expert_cache_params {
-    int  slots       = 32;   // per layer
-    int  io_threads  = 2;
-    int  max_tokens  = 1;    // batches larger than this use the mmap path (prefill)
-    bool lock_memory = true; // VirtualLock the cache so the OS cannot page it out under pressure
-    std::string bundle;      // expert-bundled sidecar (expert_bundle.h); empty = read the GGUF
+    int  slots          = 32;    // per layer
+    int  io_threads     = 2;
+    int  max_tokens     = 1;     // batches up to this size use the slots; 0 = slots / experts per token
+    bool lock_memory    = true;  // VirtualLock the cache so the OS cannot page it out under pressure
+    bool stream_prefill = false; // larger batches stream whole layers through two buffers, else they use the mmap
+    std::string bundle;          // expert-bundled sidecar (expert_bundle.h); empty = read the GGUF
 };
 
 struct expert_cache_stats {
@@ -38,6 +39,13 @@ struct expert_cache_stats {
     std::atomic<long long> ns_io{0};      // summed over I/O threads
     std::atomic<long long> ns_read{0};    // inside ReadFile
     std::atomic<long long> ns_copy{0};    // memcpy staging -> slot
+    // layer streaming (batches above max_tokens)
+    std::atomic<long long> stream_layers{0};  // layers loaded into a stream buffer
+    std::atomic<long long> stream_sync{0};    // ... of which on demand, nothing overlapped
+    std::atomic<long long> stream_bytes{0};
+    std::atomic<long long> ns_stream_wait{0}; // graph thread blocked waiting for a layer
+    std::atomic<long long> seeded{0};         // experts copied from a stream buffer into the slots
+    std::atomic<long long> ns_seed{0};
 };
 
 class expert_cache {
@@ -47,7 +55,10 @@ public:
     bool init(const llama_model * model, const std::string & gguf_path, const expert_cache_params & params);
 
     // eval-callback entry points (called on the graph thread)
+    // "ffn_moe_slot_ids-<il>" of shape [n_used, n_tokens]: picks on_slot_ids or on_stream_ids by batch size
+    void on_ids(int il, int32_t * ids, int64_t n_used, int64_t n_tokens, uint64_t token);
     void on_slot_ids(int il, int32_t * ids, int n, uint64_t token);           // resolve, load misses, rewrite ids -> slots
+    void on_stream_ids(int il, const int32_t * ids, int n, uint64_t token);  // wait for layer il, start the next, seed the slots
     void prefetch(int il, const int32_t * experts, int n, uint64_t token);   // start loading experts for a later layer
 
     // read n random experts on the calling thread and report MB/s: isolates raw I/O from inference
@@ -55,8 +66,11 @@ public:
 
     bool has_layer(int il) const { return il >= 0 && il < (int) layers.size() && !layers[il].tensors.empty(); }
 
+    int max_tokens() const { return p.max_tokens; }
+
     expert_cache_stats stats;
-    size_t bytes_total = 0; // cache memory
+    size_t bytes_total  = 0; // cache memory
+    size_t bytes_stream = 0; // stream buffers
 
 private:
     enum slot_state : uint8_t { FREE = 0, LOADING = 1, READY = 2 };
@@ -80,16 +94,38 @@ private:
     };
     struct job {
         int il, expert, slot;
+        // stream chunk (stream >= 0): read [off, off + len) of the GGUF into dst, for stream buffer `stream`
+        int      stream = -1;
+        uint64_t off    = 0;
+        size_t   len    = 0;
+        char *   dst    = nullptr;
+    };
+    // one of the two stream buffers: the layer it holds or is loading, and the chunks still in flight
+    struct stream_buf {
+        int il      = -1;
+        int pending = 0;
     };
 
     bool init_bundle(const std::string & bundle_path); // validate the sidecar and take its offsets
+    bool init_stream();                                // allocate the two layer buffers and register the views
+    void prefetch_dense(const llama_model * model);    // read the non-expert weights in big requests, not by faults
+    void seed_slots(int il, const int32_t * ids, int n, uint64_t token, std::unique_lock<std::mutex> & lk);
     int  alloc_slot(layer_state & L, uint64_t token); // caller holds mu; -1 if nothing evictable
     void submit(int il, int expert, int slot, bool urgent); // caller holds mu; urgent = front of the queue
+    void submit_stream(int il, int b, bool urgent);         // caller holds mu
     void io_loop();
     bool read_expert(void * handle, char * staging, const layer_state & L, int expert, int slot);
+    bool read_range(void * handle, char * staging, uint64_t off, size_t len, char * dst);
 
     expert_cache_params p;
     std::string path;
+    std::string gguf_file;                  // stream reads come from the GGUF, also with a sidecar
+    std::vector<int> moe_layers;            // MoE layer indices in order
+    std::vector<int> moe_ord;               // [n_layer] position in moe_layers, -1 for dense layers
+    std::vector<std::vector<ggml_tensor *>> stream_t; // [n_layer] views into a stream buffer
+    stream_buf sb[2];
+    ggml_context * sctx = nullptr;
+    ggml_backend_buffer_t sbuf = nullptr;
     int n_expert = 0;
     std::vector<layer_state> layers;
     ggml_context * ctx = nullptr;

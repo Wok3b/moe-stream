@@ -10,9 +10,11 @@
 // Usage: llama-moe-run -m model.gguf -p "prompt" -n 128 -t 10 -lzm on
 //            [--prefetch-depth D] [--prefetch-width M] [--prefetch-prefill] [--stats] [--no-resident-check]
 //            [--prefetch-threads N] [--touch]
-//            [--cache-slots C] [--io-threads N] [--cache-max-tokens T] [--no-lock]
+//            [--cache-slots C] [--io-threads N] [--cache-max-tokens T] [--no-lock] [--stream-prefill]
 //            [--experts-file model.gguf.experts]
 //   --cache-slots > 0 replaces the mmap/page-cache path by an explicit expert cache (expert_cache.h)
+//   --stream-prefill: batches above --cache-max-tokens stream every expert of a layer through two buffers
+//            (load layer L+1 while L computes) instead of paging them in from the mmap
 //   --experts-file reads whole experts from a bundled sidecar (llama-moe-bundle): one request
 //            per expert instead of three
 //            [--temp T -s SEED] [--json out.json]
@@ -83,6 +85,8 @@ struct prefetcher {
     float eps      = 1e-6f;
     int   gating   = 0;
 
+    std::string inp_name = "ffn_inp"; // graph tensor holding the residual that enters the FFN
+
     int  depth   = 0;     // layers ahead to prefetch (0 = off)
     int  width   = 0;     // experts per layer to prefetch (>= k)
     bool prefill = false; // also prefetch whole layers during batched prompt processing
@@ -108,6 +112,7 @@ struct prefetcher {
     void init(const llama_model * model) {
         const auto & hp = model->hparams;
         n_layer  = (int) model->layers.size(); // hparams.n_layer() is not exported from the DLL
+        inp_name = model->arch == LLM_ARCH_GEMMA4 ? "attn_out" : "ffn_inp"; // residual entering the FFN
         n_embd   = (int) hp.n_embd;
         n_expert = (int) hp.n_expert;
         k        = (int) hp.n_expert_used_arr[0];
@@ -136,7 +141,15 @@ struct prefetcher {
             }
             w.exps[w.n_exps++] = L.ffn_down_exps;
             w.gate_inp = to_f32(L.ffn_gate_inp);
-            w.norm     = to_f32(L.ffn_norm);
+            if (model->arch == LLM_ARCH_GEMMA4) {
+                // gemma4 routes on rms_norm(attn_out) / sqrt(n_embd) * ffn_gate_inp_s (models/gemma4.cpp)
+                w.norm = to_f32(L.ffn_gate_inp_s);
+                for (auto & v : w.norm) {
+                    v /= sqrtf((float) n_embd);
+                }
+            } else {
+                w.norm = to_f32(L.ffn_norm);
+            }
             if (L.ffn_exp_probs_b) {
                 w.probs_b = to_f32(L.ffn_exp_probs_b);
             }
@@ -426,14 +439,14 @@ struct prefetcher {
     }
 };
 
-// "<base>-<layer>" with base in {ffn_inp, ffn_moe_topk}; rejects derived names like "... (reshaped)"
-bool classify(const char * name, int & kind, int & layer) {
+// "<base>-<layer>" with base in {<inp_name>, ffn_moe_topk, ffn_moe_slot_ids}; rejects derived names like "... (reshaped)"
+bool classify(const char * name, const std::string & inp_name, int & kind, int & layer) {
     const char * dash = strrchr(name, '-');
     if (!dash || dash[1] == 0) {
         return false;
     }
     const std::string base(name, dash - name);
-    if (base == "ffn_inp") {
+    if (base == inp_name) {
         kind = 0;
     } else if (base == "ffn_moe_topk") {
         kind = 1;
@@ -452,11 +465,11 @@ bool classify(const char * name, int & kind, int & layer) {
 }
 
 bool cb_eval(struct ggml_tensor * t, bool ask, void * user_data) {
+    auto * pf = (prefetcher *) user_data;
     int kind, layer;
-    if (!classify(t->name, kind, layer)) {
+    if (!classify(t->name, pf->inp_name, kind, layer)) {
         return false;
     }
-    auto * pf = (prefetcher *) user_data;
     if (ask) {
         switch (kind) {
             case 0:  return pf->depth > 0;
@@ -472,8 +485,9 @@ bool cb_eval(struct ggml_tensor * t, bool ask, void * user_data) {
         // topk is a strided view; a single token is one dense row
         pf->on_topk(layer, (const int32_t *) t->data, n_tokens);
     } else {
-        // contiguous copy of the selected expert ids: resolve to cache slots in place
-        pf->ec->on_slot_ids(layer, (int32_t *) t->data, (int) ggml_nelements(t), pf->token);
+        // contiguous copy of the selected expert ids [n_used, n_tokens]: resolved to cache slots in place,
+        // or for a large batch with --stream-prefill, a wait for the layer to be streamed in
+        pf->ec->on_ids(layer, (int32_t *) t->data, t->ne[0], t->ne[1], pf->token);
     }
     return true;
 }
@@ -522,6 +536,8 @@ int main(int argc, char ** argv) {
             cp.io_threads = atoi(argv[++i]);
         } else if (a == "--cache-max-tokens" && i + 1 < argc) {
             cp.max_tokens = atoi(argv[++i]);
+        } else if (a == "--stream-prefill") {
+            cp.stream_prefill = true;
         } else if (a == "--no-lock") {
             cp.lock_memory = false;
         } else if (a == "--experts-file" && i + 1 < argc) {
@@ -538,6 +554,9 @@ int main(int argc, char ** argv) {
     common_params params;
     params.n_predict = 64;
     params.sampling.temp = 0.0f;
+    // mark temp as user-set: a GGUF can carry general.sampling.temp (Gemma 4: 1.0), which would replace
+    // our greedy default at load and make the tokens hash differ from run to run
+    params.sampling.user_sampling_config |= common_params_sampling_config::COMMON_PARAMS_SAMPLING_CONFIG_TEMP;
     common_init();
     if (!common_params_parse((int) args.size(), args.data(), params, LLAMA_EXAMPLE_COMMON)) {
         return 1;
@@ -664,6 +683,12 @@ int main(int argc, char ** argv) {
                 cs.n_reads.load() ? cs.bytes_read.load() / 1e6 / cs.n_reads.load() : 0.0,
                 cs.ns_wait.load() / 1e6 * per,
                 cs.ns_io.load() ? cs.bytes_read.load() / (cs.ns_io.load() / 1e9) / 1e6 : 0.0);
+    }
+    if (pf.ec && ec.bytes_stream) {
+        const auto & cs = ec.stats;
+        LOG_INF("%s: stream: %zu MiB buffers, %lld layers loaded (%lld on demand), %.0f MB read, graph waited %.2fs in total; %lld experts seeded into the slots in %.2fs\n",
+                __func__, ec.bytes_stream >> 20, cs.stream_layers.load(), cs.stream_sync.load(),
+                cs.stream_bytes.load() / 1e6, cs.ns_stream_wait.load() / 1e9, cs.seeded.load(), cs.ns_seed.load() / 1e9);
     }
     for (auto & c : text) { if (c == '\n' || c == '\r') c = ' '; }
     LOG_INF("%s: tokens hash %016llx, text: %.160s\n", __func__, (unsigned long long) tok_hash, text.c_str());

@@ -1,0 +1,5 @@
+<|turn>user
+What is the capital of France? Answer in one sentence.<turn|>
+<|turn>model
+<|channel>thought
+<channel|>

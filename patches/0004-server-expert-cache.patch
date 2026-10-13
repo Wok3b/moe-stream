@@ -1,0 +1,116 @@
+diff --git a/tools/server/CMakeLists.txt b/tools/server/CMakeLists.txt
+index 4adaaceef..7423e2deb 100644
+--- a/tools/server/CMakeLists.txt
++++ b/tools/server/CMakeLists.txt
+@@ -33,6 +33,10 @@ target_include_directories(${TARGET} PRIVATE ../mtmd)
+ target_include_directories(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR})
+ target_link_libraries(${TARGET} PUBLIC llama-common mtmd ${CMAKE_THREAD_LIBS_INIT})
+ 
++# moe-stream: expert cache, copied in by patches/install-tools.ps1
++target_sources(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR}/examples/moe-run/expert_cache.cpp)
++target_include_directories(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR}/examples/moe-run ${PROJECT_SOURCE_DIR}/src)
++
+ # llama-server-impl: server logic, reusable by app
+ 
+ set(TARGET llama-server-impl)
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index b6835e434..ef82ee0e8 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -16,6 +16,7 @@
+ #include "speculative.h"
+ #include "mtmd.h"
+ #include "mtmd-helper.h"
++#include "expert_cache.h"
+ 
+ #include <algorithm>
+ #include <cstddef>
+@@ -26,6 +27,8 @@
+ #include <random>
+ #include <utility>
+ #include <fstream>
++#include <climits>
++#include <cstring>
+ 
+ // fix problem with std::min and std::max
+ #if defined(_WIN32)
+@@ -38,6 +41,44 @@
+ 
+ constexpr int HTTP_POLLING_SECONDS = 1;
+ 
++// moe-stream: with MOE_CACHE_SLOTS > 0, MoE experts come from an explicit cache (examples/moe-run) instead of
++// the mmap: small batches from the slots, larger ones (prompt processing) streamed layer by layer unless
++// MOE_STREAM_PREFILL=0. MOE_IO_THREADS, MOE_CACHE_MAX_TOKENS and MOE_EXPERTS_FILE (bundled sidecar) are optional.
++struct moe_stream {
++    expert_cache ec;
++    int          last_il = INT_MAX;
++    uint64_t     token   = 0;
++};
++
++static std::unique_ptr<moe_stream> g_moe_stream;
++
++static bool moe_stream_cb_eval(ggml_tensor * t, bool ask, void * user_data) {
++    static const char prefix[] = "ffn_moe_slot_ids-";
++    if (strncmp(t->name, prefix, sizeof(prefix) - 1) != 0) {
++        return false;
++    }
++    const char * num = t->name + sizeof(prefix) - 1;
++    if (*num == 0 || strspn(num, "0123456789") != strlen(num)) {
++        return false; // derived names like "... (reshaped)"
++    }
++    if (ask) {
++        return true;
++    }
++    auto * ms = (moe_stream *) user_data;
++    const int il = atoi(num);
++    if (il <= ms->last_il) {
++        ms->token++; // back at the first MoE layer: next decode step
++    }
++    ms->last_il = il;
++    ms->ec.on_ids(il, (int32_t *) t->data, t->ne[0], t->ne[1], ms->token);
++    return true;
++}
++
++static int moe_stream_env(const char * name, int def) {
++    const char * v = getenv(name);
++    return v && *v ? atoi(v) : def;
++}
++
+ static common_speculative_output_limits server_output_limits(const common_params & params) {
+     if (params.embedding ||
+             (params.pooling_type != LLAMA_POOLING_TYPE_UNSPECIFIED && params.pooling_type != LLAMA_POOLING_TYPE_NONE)) {
+@@ -1096,6 +1137,22 @@ private:
+             params_base.load_progress_callback_user_data = &load_progress_text;
+         }
+ 
++        expert_cache_params ecp;
++        ecp.slots      = moe_stream_env("MOE_CACHE_SLOTS", 0);
++        ecp.io_threads = moe_stream_env("MOE_IO_THREADS", ecp.io_threads);
++        ecp.max_tokens = moe_stream_env("MOE_CACHE_MAX_TOKENS", 0); // 0: slots / experts per token
++        ecp.stream_prefill = moe_stream_env("MOE_STREAM_PREFILL", 1) != 0;
++        if (const char * bundle = getenv("MOE_EXPERTS_FILE")) {
++            ecp.bundle = bundle;
++        }
++        llama_expert_cache_clear();
++        g_moe_stream.reset();
++        if (ecp.slots > 0) {
++            g_moe_stream = std::make_unique<moe_stream>();
++            params_base.cb_eval           = moe_stream_cb_eval;
++            params_base.cb_eval_user_data = g_moe_stream.get();
++        }
++
+         llama_init = common_init_from_params(params_base);
+ 
+         model_tgt = llama_init->model();
+@@ -1111,6 +1168,11 @@ private:
+             return false;
+         }
+ 
++        if (g_moe_stream && !g_moe_stream->ec.init(model_tgt, params_base.model.path, ecp)) {
++            SRV_ERR("%s", "moe-stream: failed to init the expert cache\n");
++            return false;
++        }
++
+         vocab = llama_model_get_vocab(model_tgt);
+ 
+         n_ctx = llama_n_ctx(ctx_tgt);

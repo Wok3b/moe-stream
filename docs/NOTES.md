@@ -490,8 +490,137 @@ written as 621 — they now force `InvariantCulture`; (b) `Start-Process
 repo lives under "AI Engine") broke the `--json` argument and the ram-eater
 launch.
 
+## Results 9 — Gemma 4 26B-A4B: the cache on a real target (2026-10-13)
+
+A second machine and the first model that is not a control: **Ryzen 5 7430U** (6C/12T, AVX2, no AVX-VNNI,
+so built with `-DGGML_NATIVE=ON` only), 15.4 GB RAM of which ~8 GB is free with nothing loaded, Solidigm
+NVMe. `disk-bench-ryzen7430u.json`: 1302-1339 MB/s for 2 MB random reads at QD4-8, 961 MB/s at QD1,
+26 MB/s for 4 KB QD1 — the same shape and almost the same numbers as the reference machine, so its
+conclusions should carry over.
+
+Model: `gemma-4-26B-A4B-it-UD-IQ3_S.gguf` (unsloth), 10.5 GiB, 30 layers x 128 experts, top-8.
+`bench/gguf-experts.py` shows the layout per layer: merged `ffn_gate_up_exps` (IQ2_S, 1240 KiB per
+expert) + `ffn_down_exps` (IQ4_NL, 1089 KiB) = **2.33 MiB per expert, 8.9 GiB of the 10.5 are experts**,
+plus a per-expert scale `ffn_down_exps.scale`. One decode token touches 30 x 8 x 2.33 = 559 MB of experts.
+
+Built:
+
+- `patches/0003-expert-scale-ids.patch`. `build_lora_mm_id` gets an `ids_e` argument: the per-expert
+  scale and LoRA index by real expert ids while the matmul uses slot ids. 0002 instead turned the cache
+  off whenever any `*_exps_s` tensor existed, so on Gemma 4 the cache would silently never have run.
+- `moe-run` now marks `temp` as user-set. **Harness bug:** a GGUF can carry `general.sampling.temp`
+  (Gemma 4: 1.0, top_k 64, top_p 0.95) and the loader applies it over the tool's greedy default, so
+  every "greedy" run sampled at temp 1.0 with a random seed and no two hashes matched — including two
+  plain mmap runs. OLMoE's GGUF has no such key, so the hashes in Results 6 and 8 stand.
+- `bench/chat-prompt.py`: renders a prompt with the model's own chat template. Gemma 4 instruct
+  produces garbage on a bare "The capital of France is" in every build including upstream b11580, so
+  hash checks need templated prompts (`bench/prompts/`).
+
+**Bit-exact:** token hash `07790982544d57b8` for mmap and for 32, 64 and 96 slots (256 greedy tokens,
+story prompt, `-c 16384`, `-t 6`, `-lzm on`, 4 I/O threads, no prefetch, unpinned):
+
+| | experts locked | decode tok/s | misses/token (of 240) | read MB/token | main thread wait |
+|---|---|---|---|---|---|
+| mmap | - | **6.65** | - | - | - |
+| 32 slots | 2.2 GiB | 3.89 | 42.6 (18%) | 102 | 116 ms/token |
+| **64 slots** | **4.4 GiB** | **5.79** | **10.3 (4.3%)** | 25 | 31 ms/token |
+| 96 slots | 6.6 GiB | 5.60 | 8.8 | 21 | 26 ms/token |
+
+**Gemma 4 has a hot set.** Half the slots catch 96% of lookups, where OLMoE needed 38 of 64 experts to
+cover 80% (Results 2). Cache policy matters on this model; on OLMoE it did not.
+
+Single run per row, so read the 64/96 difference as noise; the 32 -> 64 step is not. The mmap row is the
+best case for mmap: nothing else running and the model nearly fits.
+
+## Results 10 — layer-streamed prefill, and the cache inside llama-server (2026-10-13)
+
+The first use of the cache outside `moe-run`: a journal grader (`llama-server`, JSON-schema output,
+735-token prompt, ~250 tokens out). `patches/0004-server-expert-cache.patch` adds the cache to the
+server through environment variables (`MOE_CACHE_SLOTS`, `MOE_IO_THREADS`, `MOE_CACHE_MAX_TOKENS`,
+`MOE_STREAM_PREFILL`, `MOE_EXPERTS_FILE`), so `common/arg.cpp` stays untouched.
+
+With only the decode cache, grading got **worse**: 134 s against 76 s, 11.7 GB peak working set, 31 MB
+of RAM left. Prompt processing (n_tokens > `max_tokens`) still ran on the mmap, and a 512-token batch
+touches nearly every expert, so the OS paged all 8.9 GiB of experts in on top of the 4.4 GiB locked cache.
+
+Built:
+
+- **Layer streaming** (`patches/0005-expert-stream-prefill.patch` + `expert_cache` stream mode,
+  `moe-run --stream-prefill`). Each expert tensor gets a second registration, a *stream* view with all
+  128 experts, used for batches above `max_tokens`. Two buffers of 344 MiB hold one layer each; MoE layer
+  k lives in buffer k % 2. When layer k's `ffn_moe_slot_ids` callback fires, the runtime waits for layer k
+  and queues layer k+1 into the other buffer, whose previous layer's matmuls ran before this callback.
+  Layers load as two big sequential reads split into 4 MiB requests over the I/O threads, from the GGUF
+  even when a sidecar is in use. After the last layer it loads layer 0 for the next batch.
+- **`max_tokens` = slots / experts-per-token** when not given (8 at 64 slots), and clamped to it always:
+  a batch that needs more distinct experts in a layer than there are slots would wait forever in
+  `on_slot_ids`. Batches of 2-8 tokens therefore use the slots instead of streaming 8.9 GiB.
+- **Seeding:** when a layer is in its stream buffer, the experts the batch used most are copied into
+  the slots (memcpy, no I/O), so decode does not start from an empty cache.
+- **Dense prefetch:** with experts streamed, the non-expert weights (569 tensors, 2.5 GiB) are what the
+  first prompt faults in; one `PrefetchVirtualMemory` call at init (0.18 s, asynchronous).
+
+**Bit-exact:** the 735-token grading prompt (two ubatches) gives `c3e9a15388bb95a5` on mmap, with
+streaming, with seeding, and with prefetch depth 1 and 2. The story run in Results 9 also matches with
+streaming on.
+
+`moe-run`, grading prompt, 192 tokens out, 64 slots:
+
+| | prefill tok/s | decode tok/s | misses/token | wait/token | graph waited for streaming |
+|---|---|---|---|---|---|
+| mmap | 19.8 | **6.70** | - | - | - |
+| stream | 20.9 | 4.85 | 21.8 | 61 ms | 1.98 s of 35 s |
+| stream + seeding + dense prefetch | **22.8** | 5.10 | 15.2 | 46 ms | 2.10 s of 32 s |
+
+Streaming hides almost all of its I/O behind compute: 18.7 GB read for two ubatches, 2 s of waiting.
+Prefill is now compute-bound. Decode is slower than mmap for a short answer because the cache starts
+cold for what the *answer* needs; seeding takes misses from 21.8 to 15.2 (1920 experts seeded in 0.55 s),
+but an English JSON answer uses different experts than a Serbian entry plus English instructions.
+
+On the story prompt (34-token prefill, 256 tokens out) streaming made decode *faster*, 6.69 tok/s with
+5 page faults/token against 5.79 with prefill on the mmap: the cache no longer competes with 8.9 GiB of
+paged-in experts.
+
+**The stale-router prefetcher does not pay on Gemma 4.** Gemma 4 routes on `attn_out`, not `ffn_inp`,
+through `rms_norm(x) / sqrt(n_embd) * ffn_gate_inp_s`; the prefetcher now does the same for this arch.
+
+| prefetch | prediction hit rate | decode tok/s | read MB/token | evictions/token |
+|---|---|---|---|---|
+| off | - | **5.10** | 37 | 15 |
+| depth 1, width 8 | 0.656 | 4.58 | 78 | 32 |
+| depth 2, width 8 | 0.702 | 4.11 | 118 | 49 |
+
+66-70% against OLMoE's 84%, and with 64 of 128 slots every wrong guess evicts an expert that was going
+to be used. The routing math also costs 12-23 ms/token on one thread. Off by default.
+
+**In the server** (`bench/journal-ab.ps1`, same entry graded by each config, `journal-ab.csv`):
+
+| | wall s | prompt tok/s | decode tok/s | peak working set | lowest available RAM | grades |
+|---|---|---|---|---|---|---|
+| mmap | 101 / 86 / 128 | 16.3 / 26.4 / 27.1 | 7.3 / 6.6 / 6.7 | 10.1-10.6 GB | **13 / 76 / 46 MB** | 5/4/5/5 x3 |
+| moe-stream, 64 slots | 102 / 114 / 105 | 19.6 / 20.1 / 19.5 | 4.8 / 4.8 / 4.6 | 9.3-9.4 GB | **805 / 835 / 962 MB** | 5/4/5/5 x3 |
+
+**Same wall time; the difference is headroom.** mmap takes the machine down to tens of MB free, so
+anything else running pages; moe-stream leaves ~0.9 GB free and its prompt speed does not depend on
+what the OS cache still holds (mmap's 16 -> 27 tok/s across rounds is the previous run's pages). Peak is
+9.3 GB rather than the ~7 GB I estimated because the non-expert weights are 2.5 GiB, not 1.6.
+
+This is not a speed win at this size because the model nearly fits. It is the setup for what does not:
+the same code runs a 13 GiB QAT quant or a 20 GiB Qwen3.5-35B-A3B on this machine.
+
+Caveats: the first moe-stream round ran before seeding and dense prefetch were added (rows 2-3 have
+them). Three rounds, one machine, unpinned. The server prints no cache counters yet, so server-side
+miss rates are inferred from the matching `moe-run` runs.
+
 ## Next step options (updated)
 
+- **Bundled sidecar for Gemma 4** (needs ~9 GB of disk): one request per miss instead of two, which
+  Results 8 measured at 1.5x on OLMoE. Decode still waits 46 ms/token on misses.
+- **A model that does not fit**: Gemma 4 QAT UD-Q4_K_XL (13.3 GiB) or Qwen3.5-35B-A3B Q4_K_M
+  (20.5 GiB). This is where streaming prefill + slots should beat mmap outright, not just tie it.
+- **Cheaper wrong guesses**: prefetch only into free or cold slots, or into a small separate pool, so a
+  mispredicted expert cannot evict a hot one; and run the routing math off the graph thread.
+- **Server counters**: cache and stream stats per request in the server log.
 - **K=4 + quant sweep** (cheap, no code): `--override-kv` for K, IQ4_XS/Q3_K_M
   quants of OLMoE (4 and 3 GB downloads), `llama-perplexity` for quality,
   `moe-run --cache-slots` for speed. Establishes the bytes/quality frontier.
@@ -526,3 +655,8 @@ launch.
   story. Expert-bundled layout built and measured (Results 8): 1.52-1.61x,
   bit-exact. Article written up in `docs/streaming-moe-on-a-laptop.md`, with
   every figure generated from `bench/results/` by `bench/make-charts.py`.
+- 2026-10-13 — second machine (Ryzen 5 7430U, VS 2026, no AVX-VNNI). Gemma 4 26B-A4B
+  ported (patch 0003, Results 9), moe-run sampling bug found and fixed, cache added to
+  llama-server (0004), layer-streamed prefill + slot seeding + dense prefetch (0005,
+  Results 10). Stale-router prefetch measured as a loss on Gemma 4. Raw numbers in
+  `bench/results/gemma4/`.
