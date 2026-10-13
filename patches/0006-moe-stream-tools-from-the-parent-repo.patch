@@ -1,0 +1,112 @@
+From ce9e72b96c4d99a139abf83641dee2a96b34ea6f Mon Sep 17 00:00:00 2001
+From: Wok3b <moneybeer75@gmail.com>
+Date: Tue, 13 Oct 2026 20:08:00 +0200
+Subject: [PATCH 6/6] moe-stream tools from the parent repo
+
+As the llama.cpp submodule of moe-stream, CMake builds ../tools (llama-moe-run, llama-moe-trace) and links the expert cache into llama-server (LLAMA_MOE_STREAM). Elsewhere nothing changes.
+---
+ CMakeLists.txt                  | 14 ++++++++++++++
+ tools/server/CMakeLists.txt     |  4 ----
+ tools/server/server-context.cpp | 10 +++++++++-
+ 3 files changed, 23 insertions(+), 5 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4feaf083e..5b688ef4a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -254,6 +254,20 @@ if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
+     add_subdirectory(tools)
+ endif()
+ 
++# moe-stream: checked out as the llama.cpp submodule of moe-stream, build its tools (../tools) and the
++# expert cache into llama-server. Elsewhere this does nothing.
++set(MOE_STREAM_TOOLS ${CMAKE_CURRENT_SOURCE_DIR}/../tools CACHE PATH "moe-stream tools directory")
++if (LLAMA_BUILD_COMMON AND EXISTS ${MOE_STREAM_TOOLS}/moe-run/expert_cache.cpp)
++    message(STATUS "moe-stream: tools from ${MOE_STREAM_TOOLS}")
++    add_subdirectory(${MOE_STREAM_TOOLS}/moe-run   ${CMAKE_CURRENT_BINARY_DIR}/moe-run)
++    add_subdirectory(${MOE_STREAM_TOOLS}/moe-trace ${CMAKE_CURRENT_BINARY_DIR}/moe-trace)
++    if (TARGET server-context)
++        target_sources(server-context PRIVATE ${MOE_STREAM_TOOLS}/moe-run/expert_cache.cpp)
++        target_include_directories(server-context PRIVATE ${MOE_STREAM_TOOLS}/moe-run ${CMAKE_CURRENT_SOURCE_DIR}/src)
++        target_compile_definitions(server-context PRIVATE LLAMA_MOE_STREAM)
++    endif()
++endif()
++
+ if (LLAMA_BUILD_APP)
+     add_subdirectory(app)
+ endif()
+diff --git a/tools/server/CMakeLists.txt b/tools/server/CMakeLists.txt
+index 7423e2deb..4adaaceef 100644
+--- a/tools/server/CMakeLists.txt
++++ b/tools/server/CMakeLists.txt
+@@ -33,10 +33,6 @@ target_include_directories(${TARGET} PRIVATE ../mtmd)
+ target_include_directories(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR})
+ target_link_libraries(${TARGET} PUBLIC llama-common mtmd ${CMAKE_THREAD_LIBS_INIT})
+ 
+-# moe-stream: expert cache, copied in by patches/install-tools.ps1
+-target_sources(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR}/examples/moe-run/expert_cache.cpp)
+-target_include_directories(${TARGET} PRIVATE ${PROJECT_SOURCE_DIR}/examples/moe-run ${PROJECT_SOURCE_DIR}/src)
+-
+ # llama-server-impl: server logic, reusable by app
+ 
+ set(TARGET llama-server-impl)
+diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
+index fcd86c394..04bd5b7ac 100644
+--- a/tools/server/server-context.cpp
++++ b/tools/server/server-context.cpp
+@@ -16,7 +16,9 @@
+ #include "speculative.h"
+ #include "mtmd.h"
+ #include "mtmd-helper.h"
+-#include "expert_cache.h"
++#ifdef LLAMA_MOE_STREAM
++#include "expert_cache.h" // built in by moe-stream (CMakeLists.txt)
++#endif
+ 
+ #include <algorithm>
+ #include <cstddef>
+@@ -41,6 +43,7 @@
+ 
+ constexpr int HTTP_POLLING_SECONDS = 1;
+ 
++#ifdef LLAMA_MOE_STREAM
+ // moe-stream: with MOE_CACHE_SLOTS > 0 or auto, MoE experts come from an explicit cache (examples/moe-run) instead of
+ // the mmap: small batches from the slots, larger ones (prompt processing) through two layer buffers unless
+ // MOE_STREAM_PREFILL=0, which get the predicted and picked experts, or whole layers for batches picking at least
+@@ -103,6 +106,7 @@ static int moe_stream_env(const char * name, int def) {
+     const char * v = getenv(name);
+     return v && *v ? atoi(v) : def;
+ }
++#endif // LLAMA_MOE_STREAM
+ 
+ static common_speculative_output_limits server_output_limits(const common_params & params) {
+     if (params.embedding ||
+@@ -1162,6 +1166,7 @@ private:
+             params_base.load_progress_callback_user_data = &load_progress_text;
+         }
+ 
++#ifdef LLAMA_MOE_STREAM
+         expert_cache_params ecp;
+         const char * slots_env = getenv("MOE_CACHE_SLOTS");
+         ecp.slots      = slots_env && strcmp(slots_env, "auto") == 0 ? expert_cache_params::SLOTS_AUTO : moe_stream_env("MOE_CACHE_SLOTS", 0);
+@@ -1184,6 +1189,7 @@ private:
+             params_base.cb_eval           = moe_stream_cb_eval;
+             params_base.cb_eval_user_data = g_moe_stream.get();
+         }
++#endif
+ 
+         llama_init = common_init_from_params(params_base);
+ 
+@@ -1200,10 +1206,12 @@ private:
+             return false;
+         }
+ 
++#ifdef LLAMA_MOE_STREAM
+         if (g_moe_stream && !g_moe_stream->ec.init(model_tgt, params_base.model.path, ecp)) {
+             SRV_ERR("%s", "moe-stream: failed to init the expert cache\n");
+             return false;
+         }
++#endif
+ 
+         vocab = llama_model_get_vocab(model_tgt);
+ 

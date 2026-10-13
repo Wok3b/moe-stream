@@ -1,9 +1,9 @@
 # Setup
 
-This repo holds only our own code: benchmark harness, tracing/inference tools,
-and patches against llama.cpp. The upstream clone, the build, the models and the
-raw traces are **not** included (they are large and reproducible). This file
-reassembles a working tree from scratch.
+This repo holds our own code: benchmark harness, tracing/inference tools, and
+llama.cpp with our changes as a submodule. The build, the models and the raw traces
+are **not** included (they are large and reproducible). This file reassembles a
+working tree from scratch.
 
 Everything was developed and measured on Windows; the Linux notes at the bottom
 say exactly what still needs porting.
@@ -21,80 +21,63 @@ say exactly what still needs porting.
 | Python | 3.10+, on PATH; `pip install numpy matplotlib huggingface_hub` |
 | Git | for the clone |
 
-### 1. Clone llama.cpp at the pinned commit
+### 1. Clone with the llama.cpp submodule
 
-The patches and the in-tree tools are written against **`972d231`** (master,
-2026-09-17). Later upstream commits may move `build_moe_ffn` or the loader and
-break `patches/0002-expert-cache-hook.patch`.
-
-```bash
-git clone https://github.com/ggml-org/llama.cpp llama.cpp
-cd llama.cpp && git checkout 972d231 && cd ..
-```
-
-### 2. Apply the patches
+`llama.cpp/` is a submodule: the `moe-stream` branch of
+[Wok3b/llama.cpp](https://github.com/Wok3b/llama.cpp), upstream **`972d231`** (master,
+2026-09-17) plus six commits. `patches/` holds the same commits as patch files, for reading
+or for applying to another checkout (`git am patches/*.patch`).
 
 ```bash
-cd llama.cpp
-git apply ../patches/0001-lazy-experts.patch
-git apply ../patches/0002-expert-cache-hook.patch
-git apply ../patches/0003-expert-scale-ids.patch
-git apply ../patches/0004-server-expert-cache.patch
-git apply ../patches/0005-expert-stream-prefill.patch
-cd ..
+git clone --recursive https://github.com/Wok3b/moe-stream
 ```
 
-Apply all five, in order: 0004 compiles `expert_cache.cpp` into the server, and
-that file calls the API 0005 adds.
+In an existing clone: `git submodule update --init`. A clone made before the submodule had an
+untracked `llama.cpp/` directory; move it away first (its `build/` can be moved back in).
 
-- `0001-lazy-experts.patch` — with `--lazy-mode on`, every `*_exps.weight`
+The six commits:
+
+- `lazy experts` — with `--lazy-mode on`, every `*_exps.weight`
   tensor is marked `TENSOR_READ_LAZY`, so the loader does not try to prefetch
   the whole file into RAM at startup.
-- `0002-expert-cache-hook.patch` — adds `llama_expert_cache_register()` and
+- `expert cache hook` — adds `llama_expert_cache_register()` and
   makes `build_moe_ffn` run the expert matmuls against registered cache tensors
   addressed by a rewritable `ffn_moe_slot_ids-<il>` tensor.
-- `0003-expert-scale-ids.patch` — per-expert scales (Gemma 4's
+- `expert scale ids` — per-expert scales (Gemma 4's
   `ffn_down_exps.scale`) and LoRA index by the real expert ids while the matmul
   uses slot ids. Without it the cache stays off on such models.
-- `0004-server-expert-cache.patch` — `llama-server` gets the cache, configured
-  by environment variables (see 6c).
-- `0005-expert-stream-prefill.patch` — `llama_expert_cache_register_stream()`:
+- `server expert cache` — `llama-server` gets the cache, configured
+  by environment variables (see 4c).
+- `expert stream prefill` — `llama_expert_cache_register_stream()`:
   batches above the cache's `max_tokens` run on a per-layer stream tensor that
   the runtime fills one layer ahead (Results 10).
+- `moe-stream tools from the parent repo` — when the checkout sits inside moe-stream, CMake
+  builds `../tools` and links the expert cache into `llama-server`. Elsewhere the branch builds
+  as plain llama.cpp.
 
-### 3. Copy our tools into the tree and register them
-
-```powershell
-.\patches\install-tools.ps1
-```
-
-This copies `tools/*` into `llama.cpp/examples/` and appends the
-`add_subdirectory(...)` lines. Re-run it after editing anything under `tools/`.
-Run it before configuring: patch 0004 builds the server from
-`examples/moe-run/expert_cache.cpp`.
-
-### 4. Configure and build
+### 2. Build
 
 ```powershell
-cmake -S llama.cpp -B llama.cpp\build -G "Visual Studio 17 2022" -A x64 -DGGML_NATIVE=ON -DGGML_AVX_VNNI=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF
+.\build.ps1
 ```
 
-Drop `-G` to let cmake pick the newest Visual Studio it finds, or name yours
-(`"Visual Studio 18 2026"`). The generator has to be a Visual Studio one, not
-Ninja, because the benchmark scripts expect binaries in `build\bin\Release\`.
+Extra arguments go to CMake, for example `.\build.ps1 -DGGML_AVX_VNNI=ON` on a CPU with
+AVX-VNNI (Alder Lake and later). The steps it runs:
 
 ```powershell
-cmake --build llama.cpp\build --config Release --parallel 8
+cmake -S llama.cpp -B llama.cpp\build -A x64 -DGGML_NATIVE=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF
+cmake --build llama.cpp\build --config Release --parallel --target llama-moe-run llama-moe-trace llama-moe-bundle llama-server
 ```
 
-`GGML_NATIVE=ON` lets MSVC pick the host SIMD level. Drop `-DGGML_AVX_VNNI=ON`
-on a CPU without AVX-VNNI (pre-Alder Lake). `LLAMA_OPENSSL=OFF` avoids needing
+CMake picks the newest Visual Studio it finds. The generator has to be a Visual Studio one,
+not Ninja, because the benchmark scripts expect binaries in `build\bin\Release\`.
+`GGML_NATIVE=ON` lets MSVC pick the host SIMD level. `LLAMA_OPENSSL=OFF` avoids needing
 OpenSSL; nothing here fetches over HTTPS.
 
 Binaries land in `llama.cpp\build\bin\Release\`, including our
 `llama-moe-run.exe`, `llama-moe-trace.exe` and `llama-moe-bundle.exe`.
 
-### 5. Get a model
+### 3. Get a model
 
 Any MoE GGUF works. The reference subject is OLMoE-1B-7B (16 layers, 64
 experts, top-8, 4.2 GB at Q4_K_M):
@@ -112,7 +95,7 @@ Optional, for perplexity work — wikitext-2:
 curl.exe -sSL -o "$env:TEMP\wt2.zip" https://huggingface.co/datasets/ggml-org/ci/resolve/main/wikitext-2-raw-v1.zip; python -c "import zipfile,os; zipfile.ZipFile(os.environ['TEMP']+r'\wt2.zip').extractall(r'C:\models\eval')"
 ```
 
-### 6. Smoke test
+### 4. Smoke test
 
 Warm run, explicit expert cache on, prefetch two layers ahead:
 
@@ -123,7 +106,7 @@ Warm run, explicit expert cache on, prefetch two layers ahead:
 You should see an `expert_cache:` line reporting slots and locked MiB, then a
 `decode ... tok/s` line and a `cache:` line with hits/misses per token.
 
-### 6b. Build the expert-bundled sidecar (optional, worth 1.5x)
+### 4b. Build the expert-bundled sidecar (optional, worth 1.5x)
 
 `llama-moe-bundle` rewrites the expert weights into a file where each expert's
 matrices are contiguous, so the cache fetches one with a single read instead of
@@ -147,7 +130,7 @@ same `-n`. If the hashes differ, the cache is serving wrong expert weights.
 .\llama.cpp\build\bin\Release\llama-moe-run.exe -m C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf -p "The capital of France is" -n 32 -t 10 -lzm on
 ```
 
-### 6c. Instruct models, streamed prefill, and the server
+### 4c. Instruct models, streamed prefill, and the server
 
 Instruct models such as Gemma 4 need their chat template; on a bare prompt they
 produce garbage and the hash check means nothing. Render one first:
@@ -196,7 +179,7 @@ $env:MOE_CACHE_SLOTS = "auto"; $env:MOE_IO_THREADS = 4
 `bench\gguf-experts.py <model>` prints a model's expert tensors and bytes per
 expert, which is what sizes the slots and the stream buffers.
 
-### 7. Reproduce the measurements
+### 5. Reproduce the measurements
 
 ```powershell
 .\bench\machine-info.ps1 | Out-File bench\results\machine.json -Encoding utf8
@@ -235,15 +218,16 @@ both platforms; the OS calls sit behind small helpers:
 | `QueryWorkingSetEx` | `mincore` (page cache residency, not working set) |
 | `GetProcessMemoryInfo(..).PageFaultCount` | `getrusage`: major faults reported on their own |
 
-Same steps as above, with the shell twins:
+Needs a C++ compiler, CMake and git (Ninja if installed). Same steps as above:
 
 ```bash
-git clone https://github.com/ggml-org/llama.cpp llama.cpp && git -C llama.cpp checkout 972d231
-for p in patches/000{1,2,3,4,5}-*.patch; do git -C llama.cpp apply "../$p"; done
-./patches/install-tools.sh
-cmake -S llama.cpp -B llama.cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF
-cmake --build llama.cpp/build -j --target llama-moe-run llama-moe-bundle llama-moe-trace llama-server
+git clone --recursive https://github.com/Wok3b/moe-stream && cd moe-stream
+./build.sh
 ```
+
+`build.sh` configures `llama.cpp/build` (Release, `GGML_NATIVE=ON`, Ninja when available) and
+builds `llama-moe-run`, `llama-moe-trace`, `llama-moe-bundle` and `llama-server`; extra
+arguments go to CMake.
 
 Binaries land in `llama.cpp/build/bin/` (no `Release/`, no `.exe`); `bench/chat-prompt.py`
 picks the right server path. Keep the model on a Linux filesystem: reading it through ntfs3

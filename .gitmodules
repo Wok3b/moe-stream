@@ -1,0 +1,4 @@
+[submodule "llama.cpp"]
+	path = llama.cpp
+	url = https://github.com/Wok3b/llama.cpp.git
+	branch = moe-stream

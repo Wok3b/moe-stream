@@ -91,13 +91,12 @@ the mmap path and on every cache and layout configuration.
 [SETUP.md](SETUP.md) has the details. On Windows with Visual Studio and Python:
 
 ```powershell
-git clone https://github.com/ggml-org/llama.cpp llama.cpp
-cd llama.cpp; git checkout 972d231; git apply ../patches/0001-lazy-experts.patch; git apply ../patches/0002-expert-cache-hook.patch; cd ..
-.\patches\install-tools.ps1
-cmake -S llama.cpp -B llama.cpp\build -A x64 -DGGML_NATIVE=ON -DGGML_AVX_VNNI=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF
-cmake --build llama.cpp\build --config Release --parallel 8
+git clone --recursive https://github.com/Wok3b/moe-stream; cd moe-stream
+.\build.ps1
 python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/OLMoE-1B-7B-0924-Instruct-GGUF', filename='OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf', local_dir=r'C:\models')"
 ```
+
+On Linux (C++ compiler, CMake, git): `git clone --recursive https://github.com/Wok3b/moe-stream && cd moe-stream && ./build.sh`.
 
 Build the bundled sidecar and run the comparison:
 
@@ -130,14 +129,15 @@ the cache is serving the wrong weights.
 ## Layout
 
 ```
-patches/         changes to llama.cpp, as patch files
+build.sh         build everything (build.ps1 on Windows)
+patches/         our llama.cpp commits as patch files, for reading
 tools/moe-run/   decode with the explicit expert cache and the predictive prefetcher,
                  plus llama-moe-bundle, the expert-bundled layout converter
 tools/moe-trace/ dump router decisions per layer and token
 bench/           measurement harness (PowerShell + Python)
 bench/results/   raw llama-bench / moe-run JSON and the CSV summaries
 docs/            the write-up, and NOTES.md: every result in the order measured
-llama.cpp/       upstream clone (gitignored), commit pinned in docs/NOTES.md
+llama.cpp/       submodule: Wok3b/llama.cpp, branch moe-stream (upstream 972d231 + our commits)
 C:\models\       GGUF weights and the .experts sidecars (outside the repo)
 ```
 
@@ -160,14 +160,13 @@ this model (66-70% prediction accuracy).
 
 Open, in the order it matters:
 
-1. **A model that does not fit.** Gemma 4 IQ3_S (10.5 GiB) nearly fits in
-   16 GB, so streaming ties mmap there; a 13 GiB QAT quant or a 20 GiB
-   Qwen3.5-35B-A3B is where it should win outright.
+1. **Done: a model that does not fit.** Qwen3.6-35B-A3B (20.6 GiB) on a 16 GB
+   laptop decodes at 6.4 tok/s in an 8 GB cgroup and 7.3 unlimited, against
+   mmap's 0.8-3.5 (docs/NOTES.md, Results 12-17).
 2. **Asynchronous I/O.** The reader is synchronous per thread, so queue depth
    equals thread count; the drive wants 2 to 4 from a single issuer.
-3. **Linux.** The patches are platform-neutral, the I/O path is Win32 only.
-   `SETUP.md` lists exactly what needs porting, and cgroups would give real
-   memory limits instead of pinned pages.
+3. **Done: Linux.** Ported (O_DIRECT, mlock, madvise); cgroup memory limits
+   replace pinned pages for the measurements (Results 11).
 4. **Upstream.** The expert-cache hook is small and architecture-agnostic, and
    upstream llama.cpp is already moving this way with `--load-mode dio` and lazy
    tensors.

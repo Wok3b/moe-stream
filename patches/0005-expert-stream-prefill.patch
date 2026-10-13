@@ -1,3 +1,13 @@
+From 059d6394f0625b85a028cdc0c5606f1471c575f0 Mon Sep 17 00:00:00 2001
+From: Wok3b <moneybeer75@gmail.com>
+Date: Tue, 13 Oct 2026 20:07:15 +0200
+Subject: [PATCH 5/6] expert stream prefill
+
+---
+ include/llama.h     |  3 +++
+ src/llama-graph.cpp | 20 +++++++++++++++-----
+ 2 files changed, 18 insertions(+), 5 deletions(-)
+
 diff --git a/include/llama.h b/include/llama.h
 index 6871f4a00..b45ed313d 100644
 --- a/include/llama.h

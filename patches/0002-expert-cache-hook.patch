@@ -1,5 +1,15 @@
+From cda6eeec3c4600657ba3d1c041043876e86a540d Mon Sep 17 00:00:00 2001
+From: Wok3b <moneybeer75@gmail.com>
+Date: Tue, 13 Oct 2026 20:07:15 +0200
+Subject: [PATCH 2/6] expert cache hook
+
+---
+ include/llama.h     |  7 +++++
+ src/llama-graph.cpp | 65 ++++++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 68 insertions(+), 4 deletions(-)
+
 diff --git a/include/llama.h b/include/llama.h
-index ac2215d..6871f4a 100644
+index ac2215dc7..6871f4a00 100644
 --- a/include/llama.h
 +++ b/include/llama.h
 @@ -211,6 +211,13 @@ extern "C" {
@@ -17,7 +27,7 @@ index ac2215d..6871f4a 100644
      LLAMA_API enum llama_load_mode llama_load_mode_from_str(const char * str);
  
 diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
-index fd4290c..ef3153f 100644
+index fd4290cf0..ef3153fc5 100644
 --- a/src/llama-graph.cpp
 +++ b/src/llama-graph.cpp
 @@ -18,6 +18,8 @@

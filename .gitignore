@@ -1,5 +1,3 @@
-# nested upstream clone — we track our changes as patches/ instead
-llama.cpp/
 # weights never live here (see C:\models)
 *.gguf
 *.safetensors
