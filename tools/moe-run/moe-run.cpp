@@ -3,9 +3,10 @@
 // At layer L, once the residual entering the FFN is known, the routers of
 // layers L+1..L+depth are applied to it (the "stale router": the residual
 // changes little per layer, see docs/NOTES.md) and the predicted experts'
-// weight ranges are handed to PrefetchVirtualMemory, so the kernel issues
-// large reads for them while layers L..L+depth-1 compute. Without this the
-// experts fault in page by page when mul_mat_id touches them.
+// weight ranges are handed to PrefetchVirtualMemory (madvise(WILLNEED) on
+// Linux), so the kernel issues large reads for them while layers L..L+depth-1
+// compute. Without this the experts fault in page by page when mul_mat_id
+// touches them.
 //
 // Usage: llama-moe-run -m model.gguf -p "prompt" -n 128 -t 10 -lzm on
 //            [--prefetch-depth D] [--prefetch-width M] [--prefetch-prefill] [--stats] [--no-resident-check]
@@ -46,9 +47,59 @@
 #define NOMINMAX
 #include <windows.h>
 #include <psapi.h>
+#else
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 namespace {
+
+struct mem_range {
+    void * addr;
+    size_t len;
+};
+
+// ask the OS to read the pages in ahead of use
+void prefetch_ranges(const std::vector<mem_range> & rs) {
+#ifdef _WIN32
+    std::vector<WIN32_MEMORY_RANGE_ENTRY> w;
+    w.reserve(rs.size());
+    for (const auto & r : rs) {
+        w.push_back({ r.addr, r.len });
+    }
+    PrefetchVirtualMemory(GetCurrentProcess(), (ULONG_PTR) w.size(), w.data(), 0);
+#else
+    // WILLNEED queues readahead on the mapped file and returns; the start must be page-aligned
+    const uintptr_t page = (uintptr_t) sysconf(_SC_PAGESIZE);
+    for (const auto & r : rs) {
+        const uintptr_t a0 = (uintptr_t) r.addr & ~(page - 1);
+        madvise((void *) a0, (uintptr_t) r.addr + r.len - a0, MADV_WILLNEED);
+    }
+#endif
+}
+
+// first and middle page mapped in (Windows: in the working set; Linux: in the page cache)
+bool resident(const mem_range & r) {
+#ifdef _WIN32
+    PSAPI_WORKING_SET_EX_INFORMATION info[2];
+    info[0].VirtualAddress = r.addr;
+    info[1].VirtualAddress = (char *) r.addr + ((r.len / 2) & ~(SIZE_T) 4095);
+    if (!QueryWorkingSetEx(GetCurrentProcess(), info, sizeof(info))) {
+        return false;
+    }
+    return info[0].VirtualAttributes.Valid && info[1].VirtualAttributes.Valid;
+#else
+    const uintptr_t page = (uintptr_t) sysconf(_SC_PAGESIZE);
+    for (const uintptr_t a : { (uintptr_t) r.addr, (uintptr_t) r.addr + r.len / 2 }) {
+        unsigned char v = 0;
+        if (mincore((void *) (a & ~(page - 1)), 1, &v) != 0 || !(v & 1)) {
+            return false;
+        }
+    }
+    return true;
+#endif
+}
 
 struct layer_weights {
     const ggml_tensor * exps[3]  = {}; // up, gate, down (or gate_up, down)
@@ -105,9 +156,7 @@ struct prefetcher {
 
     std::vector<float>   xn, logits;
     std::vector<int32_t> order;
-#ifdef _WIN32
-    std::vector<WIN32_MEMORY_RANGE_ENTRY> ranges;
-#endif
+    std::vector<mem_range> ranges;
 
     void init(const llama_model * model) {
         const auto & hp = model->hparams;
@@ -202,10 +251,9 @@ struct prefetcher {
         }
     }
 
-#ifdef _WIN32
     struct job {
         int layer;
-        std::vector<WIN32_MEMORY_RANGE_ENTRY> ranges;
+        std::vector<mem_range> ranges;
     };
     // PrefetchVirtualMemory walks every page of every range in the caller's thread (~0.16 ms/MB
     // even when resident), so it runs on a worker: the compute threads only pay for the routing
@@ -265,27 +313,18 @@ struct prefetcher {
                 const auto t0 = std::chrono::steady_clock::now();
                 volatile char sink = 0;
                 for (const auto & r : j.ranges) {
-                    const char * base = (const char *) r.VirtualAddress;
-                    for (size_t off = 0; off < r.NumberOfBytes; off += 4096) {
+                    const char * base = (const char *) r.addr;
+                    for (size_t off = 0; off < r.len; off += 4096) {
                         sink += base[off];
                     }
-                    bytes_touched += r.NumberOfBytes;
+                    bytes_touched += r.len;
                 }
                 (void) sink;
                 ns_touch += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
             }
         }
-        bool resident(const WIN32_MEMORY_RANGE_ENTRY & r) {
-            PSAPI_WORKING_SET_EX_INFORMATION info[2];
-            info[0].VirtualAddress = r.VirtualAddress;
-            info[1].VirtualAddress = (char *) r.VirtualAddress + ((r.NumberOfBytes / 2) & ~(SIZE_T) 4095);
-            if (!QueryWorkingSetEx(GetCurrentProcess(), info, sizeof(info))) {
-                return false;
-            }
-            return info[0].VirtualAttributes.Valid && info[1].VirtualAttributes.Valid;
-        }
         void run() {
-            std::vector<WIN32_MEMORY_RANGE_ENTRY> todo;
+            std::vector<mem_range> todo;
             for (;;) {
                 job j;
                 {
@@ -298,14 +337,14 @@ struct prefetcher {
                 if (j.layer <= current_layer.load()) { stale++; continue; }
                 todo.clear();
                 for (const auto & r : j.ranges) {
-                    if (check_resident && resident(r)) { bytes_skipped += r.NumberOfBytes; continue; }
+                    if (check_resident && resident(r)) { bytes_skipped += r.len; continue; }
                     todo.push_back(r);
                 }
                 if (todo.empty()) continue;
                 const auto t0 = std::chrono::steady_clock::now();
-                PrefetchVirtualMemory(GetCurrentProcess(), (ULONG_PTR) todo.size(), todo.data(), 0);
+                prefetch_ranges(todo);
                 ns_in_calls += std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
-                for (const auto & r : todo) bytes_issued += r.NumberOfBytes;
+                for (const auto & r : todo) bytes_issued += r.len;
                 calls++;
                 if (touch) {
                     job t; t.layer = j.layer; t.ranges = todo;
@@ -315,7 +354,6 @@ struct prefetcher {
             }
         }
     } wk;
-#endif
 
     void issue(int il, const int32_t * ids, int n) {
         if (ec) {
@@ -328,7 +366,6 @@ struct prefetcher {
             }
             return;
         }
-#ifdef _WIN32
         const auto & w = layers[il];
         job j;
         j.layer = il;
@@ -336,18 +373,12 @@ struct prefetcher {
         for (int i = 0; i < n; ++i) {
             for (int t = 0; t < w.n_exps; ++t) {
                 const ggml_tensor * e = w.exps[t];
-                WIN32_MEMORY_RANGE_ENTRY r;
-                r.VirtualAddress = (char *) e->data + (size_t) ids[i] * e->nb[2];
-                r.NumberOfBytes  = e->nb[2];
-                j.ranges.push_back(r);
-                bytes_prefetched += r.NumberOfBytes;
+                j.ranges.push_back({ (char *) e->data + (size_t) ids[i] * e->nb[2], e->nb[2] });
+                bytes_prefetched += e->nb[2];
             }
         }
         wk.push(std::move(j));
         n_prefetch_calls++;
-#else
-        GGML_UNUSED(il); GGML_UNUSED(ids); GGML_UNUSED(n);
-#endif
     }
 
     // whole-layer prefetch for batched prompt processing (every expert gets used anyway)
@@ -355,25 +386,18 @@ struct prefetcher {
         if (ec) {
             return;
         }
-#ifdef _WIN32
         const auto & w = layers[il];
         ranges.clear();
         for (int t = 0; t < w.n_exps; ++t) {
             const ggml_tensor * e = w.exps[t];
-            WIN32_MEMORY_RANGE_ENTRY r;
-            r.VirtualAddress = e->data;
-            r.NumberOfBytes  = ggml_nbytes(e);
-            ranges.push_back(r);
-            bytes_prefetched += r.NumberOfBytes;
+            ranges.push_back({ e->data, ggml_nbytes(e) });
+            bytes_prefetched += ggml_nbytes(e);
         }
         job j;
         j.layer = il;
         j.ranges = ranges;
         wk.push(std::move(j));
         n_prefetch_calls++;
-#else
-        GGML_UNUSED(il);
-#endif
     }
 
     // the residual entering layer il's FFN is ready: predict and prefetch ahead
@@ -381,9 +405,7 @@ struct prefetcher {
         if (depth <= 0) {
             return;
         }
-#ifdef _WIN32
         wk.current_layer.store(il);
-#endif
         if (n_tokens > 1) {
             if (prefill) {
                 for (int d = 1; d <= depth; ++d) {
@@ -492,14 +514,28 @@ bool cb_eval(struct ggml_tensor * t, bool ask, void * user_data) {
     return true;
 }
 
-size_t page_faults() {
+// Windows only reports hard + soft faults together (major stays 0); soft faults are cheap, so on
+// Linux the major ones (read from disk) are counted on their own
+struct fault_count {
+    size_t total = 0;
+    size_t major = 0;
+};
+
+fault_count page_faults() {
+    fault_count f;
 #ifdef _WIN32
     PROCESS_MEMORY_COUNTERS pmc;
     if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
-        return pmc.PageFaultCount;
+        f.total = pmc.PageFaultCount;
+    }
+#else
+    rusage ru;
+    if (getrusage(RUSAGE_SELF, &ru) == 0) {
+        f.total = (size_t) (ru.ru_majflt + ru.ru_minflt);
+        f.major = (size_t) ru.ru_majflt;
     }
 #endif
-    return 0;
+    return f;
 }
 
 } // namespace
@@ -588,14 +624,12 @@ int main(int argc, char ** argv) {
         }
         pf.ec = &ec;
     }
-#ifdef _WIN32
     pf.wk.check_resident = !no_resident_check;
     pf.wk.n_threads      = std::max(1, prefetch_threads);
     pf.wk.touch          = touch;
     if (pf.depth > 0 && !pf.ec) {
         pf.wk.start();
     }
-#endif
     const llama_vocab * vocab = llama_model_get_vocab(model);
 
     std::vector<llama_token> tokens = common_tokenize(ctx, params.prompt, llama_vocab_get_add_bos(vocab), true);
@@ -605,7 +639,7 @@ int main(int argc, char ** argv) {
     }
 
     using clock = std::chrono::steady_clock;
-    const size_t pf0 = page_faults();
+    const fault_count pf0 = page_faults();
     const auto tp0 = clock::now();
     pf.token = 0;
     if (llama_decode(ctx, llama_batch_get_one(tokens.data(), (int32_t) tokens.size()))) {
@@ -613,7 +647,7 @@ int main(int argc, char ** argv) {
         return 1;
     }
     const double prefill_s = std::chrono::duration<double>(clock::now() - tp0).count();
-    const size_t pf1 = page_faults();
+    const fault_count pf1 = page_faults();
 
     auto * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     if (params.sampling.temp > 0.0f) {
@@ -643,8 +677,7 @@ int main(int argc, char ** argv) {
         n_gen++;
     }
     const double gen_s = std::chrono::duration<double>(clock::now() - tg0).count();
-    const size_t pf2 = page_faults();
-#ifdef _WIN32
+    const fault_count pf2 = page_faults();
     pf.wk.finish();
     const double wk_ms  = pf.wk.ns_in_calls.load() / 1e6;
     const double wk_mb  = pf.wk.bytes_issued.load() / 1e6;
@@ -652,22 +685,20 @@ int main(int argc, char ** argv) {
     const double tch_ms = pf.wk.ns_touch.load() / 1e6;
     const double tch_mb = pf.wk.bytes_touched.load() / 1e6;
     const long long stale = pf.wk.stale.load();
-#else
-    const double wk_ms = 0, wk_mb = 0, skp_mb = 0, tch_ms = 0, tch_mb = 0; const long long stale = 0;
-#endif
 
     const double hit = pf.n_actual ? (double) pf.n_hit / pf.n_actual : 0.0;
-    const double faults_per_token = n_gen ? (double) (pf2 - pf1) / n_gen : 0.0;
+    const double faults_per_token = n_gen ? (double) (pf2.total - pf1.total) / n_gen : 0.0;
+    const double majflt_per_token = n_gen ? (double) (pf2.major - pf1.major) / n_gen : 0.0;
     const double gen_tps = n_gen ? n_gen / gen_s : 0.0;
-    LOG_INF("\n%s: prefill %zu tokens in %.2fs (%.1f tok/s), %zu page faults\n", __func__,
-            tokens.size(), prefill_s, tokens.size() / prefill_s, pf1 - pf0);
-    LOG_INF("%s: decode %d tokens in %.2fs (%.2f tok/s), %.0f page faults/token\n", __func__,
-            n_gen, gen_s, gen_tps, faults_per_token);
+    LOG_INF("\n%s: prefill %zu tokens in %.2fs (%.1f tok/s), %zu page faults (%zu major)\n", __func__,
+            tokens.size(), prefill_s, tokens.size() / prefill_s, pf1.total - pf0.total, pf1.major - pf0.major);
+    LOG_INF("%s: decode %d tokens in %.2fs (%.2f tok/s), %.0f page faults/token (%.1f major)\n", __func__,
+            n_gen, gen_s, gen_tps, faults_per_token, majflt_per_token);
     if (pf.depth > 0) {
         LOG_INF("%s: prefetch depth %d width %d: predict %.2f ms/token, %.1f MB/token requested, hit rate %.3f (%lld/%lld)\n",
                 __func__, pf.depth, pf.width, n_gen ? pf.predict_ms / n_gen : 0.0,
                 n_gen ? pf.bytes_prefetched / 1e6 / n_gen : 0.0, hit, pf.n_hit, pf.n_actual);
-        LOG_INF("%s: worker x%d: %.1f MB/token issued, %.1f MB/token skipped (resident), %lld stale jobs, %.1f ms/token inside PrefetchVirtualMemory; toucher: %.1f MB/token in %.1f ms/token\n",
+        LOG_INF("%s: worker x%d: %.1f MB/token issued, %.1f MB/token skipped (resident), %lld stale jobs, %.1f ms/token inside the prefetch call; toucher: %.1f MB/token in %.1f ms/token\n",
                 __func__, pf.wk.n_threads, n_gen ? wk_mb / n_gen : 0.0, n_gen ? skp_mb / n_gen : 0.0, stale, n_gen ? wk_ms / n_gen : 0.0,
                 n_gen ? tch_mb / n_gen : 0.0, n_gen ? tch_ms / n_gen : 0.0);
     }
@@ -696,14 +727,15 @@ int main(int argc, char ** argv) {
     if (!json_out.empty()) {
         if (FILE * f = fopen(json_out.c_str(), "wb")) {
             fprintf(f, "{\"n_prompt\": %zu, \"prefill_s\": %.4f, \"n_gen\": %d, \"gen_s\": %.4f, \"gen_tps\": %.4f, "
-                       "\"faults_per_token\": %.1f, \"prefetch_depth\": %d, \"prefetch_width\": %d, "
+                       "\"prefill_faults\": %zu, \"prefill_majflt\": %zu, \"faults_per_token\": %.1f, \"majflt_per_token\": %.2f, \"prefetch_depth\": %d, \"prefetch_width\": %d, "
                        "\"prefetch_mb_per_token\": %.2f, \"hit_rate\": %.4f, \"predict_ms_per_token\": %.3f, "
                        "\"issued_mb_per_token\": %.2f, \"skipped_mb_per_token\": %.2f, \"stale_jobs\": %lld, \"worker_ms_per_token\": %.2f, "
                        "\"prefetch_threads\": %d, \"touch\": %d, \"touch_ms_per_token\": %.2f, "
                        "\"cache_slots\": %d, \"cache_hits\": %.2f, \"cache_late_hits\": %.2f, \"cache_misses\": %.2f, "
                        "\"cache_read_mb_per_token\": %.2f, \"cache_wait_ms_per_token\": %.2f, \"cache_io_mbps\": %.0f, "
                        "\"cache_reads_per_token\": %.2f, \"cache_layout\": \"%s\"}\n",
-                    tokens.size(), prefill_s, n_gen, gen_s, gen_tps, faults_per_token, pf.depth, pf.width,
+                    tokens.size(), prefill_s, n_gen, gen_s, gen_tps, pf1.total - pf0.total, pf1.major - pf0.major,
+                    faults_per_token, majflt_per_token, pf.depth, pf.width,
                     n_gen ? pf.bytes_prefetched / 1e6 / n_gen : 0.0, hit, n_gen ? pf.predict_ms / n_gen : 0.0,
                     n_gen ? wk_mb / n_gen : 0.0, n_gen ? skp_mb / n_gen : 0.0, stale, n_gen ? wk_ms / n_gen : 0.0,
                     prefetch_threads, touch ? 1 : 0, n_gen ? tch_ms / n_gen : 0.0,

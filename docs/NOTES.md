@@ -612,6 +612,66 @@ Caveats: the first moe-stream round ran before seeding and dense prefetch were a
 them). Three rounds, one machine, unpinned. The server prints no cache counters yet, so server-side
 miss rates are inferred from the matching `moe-run` runs.
 
+## Results 11 — Linux port, and the model under real memory budgets (2026-10-13)
+
+Same laptop as Results 9-10 (Ryzen 5 7430U, 15.4 GB, Solidigm NVMe), booted into Arch instead of
+Windows: Linux 7.2, GCC, btrfs, model copied onto the Linux partition. `expert_cache.cpp` and
+`moe-run.cpp` now build on both systems (SETUP.md, Linux): `O_DIRECT` + `pread`, `posix_memalign`,
+`mlock`, `madvise(WILLNEED)`, `mincore`, and `getrusage` so major faults are counted on their own.
+`mlock` fails at Arch's 8 MiB `ulimit -l`; it warns and goes on, as on Windows.
+
+**Bit-exact within the Linux build.** Story prompt, 256 tokens, `-t 6 -c 16384 -lzm on`: mmap, 32, 64
+and 96 slots, and 64 slots + `--stream-prefill` all give `090643b6af8e29c9` (MSVC gave `07790982544d57b8`;
+GCC rounds differently, as expected). All 15 budget runs below give `aa7be0807a9ce7a9` (128 tokens).
+
+| story, 256 tokens | Windows decode tok/s | Linux decode tok/s | Linux misses/token | Linux major faults/token |
+|---|---|---|---|---|
+| mmap, warm | 6.65 | 6.77, then **8.73** | - | 2443, then 972 |
+| 32 slots | - | 5.78 | 42.2 | 0.3 |
+| 64 slots | 5.79 | 9.11 | 10.2 | 1.0 |
+| 96 slots | - | 9.03 | 8.6 | 1.0 |
+| 64 slots + stream prefill | 6.69 | **9.76** | 6.1 | 0.0 |
+
+Linux is faster on everything, mmap included (+31% warm), and the cache gains more (+46%). The miss
+counts are close to Windows' (64 slots: ~10/token both), so the gap is not I/O. Most likely the compiler
+(GCC vs MSVC on the ggml CPU kernels) plus less background load; not isolated. I/O per thread: 520-800
+MB/s for 1.2 MB `O_DIRECT` reads, with 4 threads.
+
+**Memory budgets** (`bench/mem-budget.sh`): `systemd-run --user --scope -p MemoryMax=X -p
+MemorySwapMax=0`, no root. Every run starts cold for the model file (`bench/evict-file.py`,
+`posix_fadvise(DONTNEED)`). Story prompt (34 tokens), 128 tokens out, `--io-threads 4`. Page cache counts
+against `MemoryMax`, so the mmap run gets exactly X for weights + KV + everything else.
+
+| budget | mmap decode | mmap wall | 32 slots + stream | wall | 64 slots + stream | wall |
+|---|---|---|---|---|---|---|
+| 6 GB | 1.97 (18063 majflt/tok) | 91 s* | **5.68** (0) | 30 s* | 0.41 (655 majflt/tok) | 320 s |
+| 8 GB | 4.88 (4936) | 52 s | 5.94 (0) | 29 s | **9.58** (0) | 21 s |
+| 10 GB | 6.31 (3136) | 46 s | 5.93 | 29 s | **9.44** | 21 s |
+| 12 GB | 6.35 (3128) | 46 s | 5.95 | 29 s | **9.56** | 21 s |
+| none | 6.35 (3128) | 46 s | 5.94 | 29 s | **9.57** | 21 s |
+
+\* `bc` was missing for the first two runs; process time from the log's elapsed stamps instead.
+Wall includes model load. Prefill: mmap 1.4 tok/s with ~1.04 M major faults, streaming 6.2 tok/s with
+~380, at every budget.
+
+What it shows:
+
+- **At 8 GB, moe-stream is 2x mmap on decode and 2.5x end to end** (21 s vs 52 s), at the same output.
+  At 6 GB, 32 slots runs 2.9x mmap and does not fault at all. moe-stream's speed does not move from
+  8 GB to unlimited: it only uses what it allocated.
+- **mmap above 10 GB is limited by the cold start, not the budget.** 10, 12 GB and unlimited are
+  identical (6.3 tok/s, ~3.1k major faults/token): the first touch of each expert is a 4 KiB-granular
+  fault, 128 tokens is too short to warm up, and prefill pages in 1 M faults at 1.4 tok/s. Warm, mmap
+  reaches 8.7 tok/s (table above), still below 64 slots + stream at 9.6-9.8.
+- **Too many slots is worse than mmap.** 64 slots + stream at 6 GB leaves under 1 GB for the 2.5 GiB of
+  non-expert weights and the KV cache; those thrash instead (655 major + 33k minor faults/token, 0.41
+  tok/s). The budget rule from Results 10 holds: slots x 69 MiB + 688 MiB stream + 2.5 GiB dense + KV.
+  A `--cache-slots auto` that sizes from `memory.max` would avoid the cliff.
+
+Caveats: one prompt, short output, one run per cell (the warm mmap runs show run-to-run drift of 30%).
+Desktop session running (browser, terminal, ~4 GB). mmap's cold numbers include the model's first read
+from disk, which a long-running server pays once; the warm row is the fair decode comparison.
+
 ## Next step options (updated)
 
 - **Bundled sidecar for Gemma 4** (needs ~9 GB of disk): one request per miss instead of two, which
@@ -660,3 +720,6 @@ miss rates are inferred from the matching `moe-run` runs.
   llama-server (0004), layer-streamed prefill + slot seeding + dense prefetch (0005,
   Results 10). Stale-router prefetch measured as a loss on Gemma 4. Raw numbers in
   `bench/results/gemma4/`.
+- 2026-10-13 (later) — Arch on the same laptop: tools ported to Linux (O_DIRECT, mlock, madvise,
+  mincore, getrusage), bit-exact across mmap / slots / stream. cgroup budget sweep 6-12 GB (Results 11):
+  2x mmap's decode at 8 GB, 2.9x at 6 GB with 32 slots. Raw numbers in `bench/results/linux/`.

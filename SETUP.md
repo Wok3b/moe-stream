@@ -210,54 +210,46 @@ re-running anything — Results 1-7 explain what each script was built to answer
 
 ## Linux
 
-**Status: not ported.** llama.cpp itself builds fine, and the two patches are
-platform-neutral (they touch `llama-model-loader.cpp` and `llama-graph.cpp`).
-What does not build is our tooling.
-
-Build the upstream part exactly as above but with:
-
-```bash
-cmake -S llama.cpp -B llama.cpp/build -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF && cmake --build llama.cpp/build -j
-```
-
-### What needs porting
-
-`tools/moe-run/expert_cache.cpp` — the I/O path, all inside `#ifdef _WIN32`:
+**Status: ported** (2026-10-13, Arch, GCC). `expert_cache.cpp` and `moe-run.cpp` build on
+both platforms; the OS calls sit behind small helpers:
 
 | Windows | Linux |
 |---|---|
 | `CreateFileA(.., FILE_FLAG_NO_BUFFERING, ..)` | `open(path, O_RDONLY \| O_DIRECT)` |
-| `SetFilePointerEx` + `ReadFile` | `pread(fd, buf, len, off)` — simpler and thread-safe, no seek |
-| `VirtualAlloc` staging buffer | `posix_memalign(&p, 4096, n)` — O_DIRECT needs aligned buffers |
-| `VirtualLock` + `SetProcessWorkingSetSizeEx` | `mlock(base, size)`; needs `RLIMIT_MEMLOCK` raised (`ulimit -l`) or `CAP_IPC_LOCK` |
-| `GetLastError()` | `errno` / `strerror` |
+| `SetFilePointerEx` + `ReadFile` | `pread` (thread-safe, no seek) |
+| `VirtualAlloc` staging buffer | `posix_memalign(4096)` |
+| `VirtualLock` + `SetProcessWorkingSetSizeEx` | `mlock`; bounded by `RLIMIT_MEMLOCK` (warns and continues) |
+| `PrefetchVirtualMemory` | `madvise(MADV_WILLNEED)` |
+| `QueryWorkingSetEx` | `mincore` (page cache residency, not working set) |
+| `GetProcessMemoryInfo(..).PageFaultCount` | `getrusage`: major faults reported on their own |
 
-`tools/moe-run/moe-bundle.cpp` builds as is: it uses stdio and already maps
-`fseek64` to `fseeko`. Only the cache reading the sidecar is Win32.
+Same steps as above, with the shell twins:
 
-`tools/moe-run/moe-run.cpp` — the mmap-prefetch path and the counters:
+```bash
+git clone https://github.com/ggml-org/llama.cpp llama.cpp && git -C llama.cpp checkout 972d231
+for p in patches/000{1,2,3,4,5}-*.patch; do git -C llama.cpp apply "../$p"; done
+./patches/install-tools.sh
+cmake -S llama.cpp -B llama.cpp/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF
+cmake --build llama.cpp/build -j --target llama-moe-run llama-moe-bundle llama-moe-trace llama-server
+```
 
-| Windows | Linux |
-|---|---|
-| `PrefetchVirtualMemory` | `posix_madvise(.., POSIX_MADV_WILLNEED)` |
-| `QueryWorkingSetEx` (residency check) | `mincore(addr, len, vec)` |
-| `GetProcessMemoryInfo(..).PageFaultCount` | `getrusage(RUSAGE_SELF).ru_majflt` (major faults only — arguably a better metric than what we used) |
+Binaries land in `llama.cpp/build/bin/` (no `Release/`, no `.exe`); `bench/chat-prompt.py`
+picks the right server path. Keep the model on a Linux filesystem: reading it through ntfs3
+distorts every I/O number.
 
-Note that the `PrefetchVirtualMemory` path is the one Results 5 showed does
-**not** work well; only the `expert_cache` path (Results 6) is worth porting
-first. The prefetcher's routing math (`prefetcher::route`) is plain C++ and
-already portable.
+`mlock` of the cache fails at the default `ulimit -l` (8 MiB on Arch). Under
+`MemorySwapMax=0` it does not matter: anonymous memory in that scope cannot be swapped anyway.
+Elsewhere raise the limit in `/etc/security/limits.conf` (`memlock`).
 
-`bench/*.ps1` — rewrite in bash. `bench/analyze-trace.py` is portable as-is;
-`bench/ram-eater.py` and `bench/disk-bench.py` are ctypes-on-Win32 and need
-Linux equivalents (`mmap` + `mlock`, and `O_DIRECT`).
+Not ported: `bench/*.ps1` (`bench/mem-budget.sh` replaces the budget sweeps),
+`bench/ram-eater.py`, `bench/disk-bench.py`.
 
 ### Linux is a better measurement platform
 
 Two of the weaknesses in our Windows data go away:
 
-- **Real memory budgets.** `systemd-run --scope -p MemoryMax=2G -p MemorySwapMax=0 -- <cmd>` enforces a hard cgroup limit. Our `ram-eater.py` only *pins* pages, and Windows responded by paging other processes out mid-run, which drifted the budget between A/B runs (see the Results 6 caveat about a baseline hitting 28.6 tok/s).
-- **Cold caches.** `echo 3 | sudo tee /proc/sys/vm/drop_caches` is reliable; our `purge-standby.ps1` needs UAC and an undocumented `NtSetSystemInformation` call.
+- **Real memory budgets.** `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0 -- <cmd>` enforces a hard cgroup limit. Our `ram-eater.py` only *pins* pages, and Windows responded by paging other processes out mid-run, which drifted the budget between A/B runs (see the Results 6 caveat about a baseline hitting 28.6 tok/s).
+- **Cold caches.** `bench/evict-file.py model.gguf` drops just the model's pages (`posix_fadvise(DONTNEED)`, no root); `echo 3 | sudo tee /proc/sys/vm/drop_caches` drops everything. Our `purge-standby.ps1` needs UAC and an undocumented `NtSetSystemInformation` call.
 
 Also `/usr/bin/time -v`, `perf stat`, and `iostat -x` give per-process major
 faults and per-device queue depth directly, which on Windows took performance

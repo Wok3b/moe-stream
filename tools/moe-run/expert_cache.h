@@ -21,7 +21,7 @@ struct expert_cache_params {
     int  slots          = 32;    // per layer
     int  io_threads     = 2;
     int  max_tokens     = 1;     // batches up to this size use the slots; 0 = slots / experts per token
-    bool lock_memory    = true;  // VirtualLock the cache so the OS cannot page it out under pressure
+    bool lock_memory    = true;  // VirtualLock/mlock the cache so the OS cannot page it out under pressure
     bool stream_prefill = false; // larger batches stream whole layers through two buffers, else they use the mmap
     std::string bundle;          // expert-bundled sidecar (expert_bundle.h); empty = read the GGUF
 };

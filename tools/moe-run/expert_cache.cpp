@@ -15,6 +15,13 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <cerrno>
+#include <cstdlib>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -24,6 +31,83 @@ constexpr size_t STREAM_CHUNK = 4u << 20; // layer streaming: request size, one 
 int64_t now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
+
+// Unbuffered file reads. The handle is an opaque void * (a HANDLE, or an fd cast through intptr_t);
+// offset, length and buffer must all be SECTOR aligned.
+#ifdef _WIN32
+void * open_direct(const std::string & path) {
+    HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, nullptr);
+    return h == INVALID_HANDLE_VALUE ? nullptr : h;
+}
+void close_direct(void * h) {
+    CloseHandle(h);
+}
+// bytes read, -1 on error
+int64_t read_at(void * h, void * dst, size_t len, uint64_t off) {
+    LARGE_INTEGER li;
+    li.QuadPart = (LONGLONG) off;
+    DWORD got = 0;
+    if (!SetFilePointerEx(h, li, nullptr, FILE_BEGIN) || !ReadFile(h, dst, (DWORD) len, &got, nullptr)) {
+        return -1;
+    }
+    return got;
+}
+uint64_t file_size(void * h) {
+    LARGE_INTEGER sz;
+    return GetFileSizeEx(h, &sz) ? (uint64_t) sz.QuadPart : 0;
+}
+char * alloc_aligned(size_t size) {
+    return (char *) VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+}
+void free_aligned(char * p) {
+    VirtualFree(p, 0, MEM_RELEASE);
+}
+std::string os_error() {
+    return "error " + std::to_string(GetLastError());
+}
+#else
+void * open_direct(const std::string & path) {
+    const int fd = open(path.c_str(), O_RDONLY | O_DIRECT | O_CLOEXEC);
+    return fd < 0 ? nullptr : (void *) (intptr_t) (fd + 1); // +1: fd 0 must not look like a failure
+}
+int fd_of(void * h) {
+    return (int) (intptr_t) h - 1;
+}
+void close_direct(void * h) {
+    close(fd_of(h));
+}
+int64_t read_at(void * h, void * dst, size_t len, uint64_t off) {
+    size_t got = 0;
+    while (got < len) { // short only at EOF; a partial O_DIRECT read ends on a sector boundary
+        const ssize_t r = pread(fd_of(h), (char *) dst + got, len - got, (off_t) (off + got));
+        if (r < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (r == 0) {
+            break;
+        }
+        got += (size_t) r;
+    }
+    return (int64_t) got;
+}
+uint64_t file_size(void * h) {
+    struct stat st;
+    return fstat(fd_of(h), &st) == 0 ? (uint64_t) st.st_size : 0;
+}
+char * alloc_aligned(size_t size) {
+    void * p = nullptr;
+    return posix_memalign(&p, SECTOR, size) == 0 ? (char *) p : nullptr;
+}
+void free_aligned(char * p) {
+    free(p);
+}
+std::string os_error() {
+    return strerror(errno);
+}
+#endif
 } // namespace
 
 expert_cache::~expert_cache() {
@@ -162,6 +246,7 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
         prefetch_dense(model);
     }
 
+    bool locked = false;
 #ifdef _WIN32
     if (p.lock_memory) {
         const size_t size = bytes_total + bytes_stream;
@@ -172,6 +257,19 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
             (sbuf && !VirtualLock(ggml_backend_buffer_get_base(sbuf), bytes_stream))) {
             LOG_WRN("expert_cache: could not lock %zu MiB of cache memory (error %lu); it may be paged out under pressure\n",
                     size >> 20, GetLastError());
+        } else {
+            locked = true;
+        }
+    }
+#else
+    if (p.lock_memory) {
+        // bounded by RLIMIT_MEMLOCK: raise it with ulimit -l or LimitMEMLOCK=infinity in the systemd scope
+        if (mlock(ggml_backend_buffer_get_base(buf), bytes_total) != 0 ||
+            (sbuf && mlock(ggml_backend_buffer_get_base(sbuf), bytes_stream) != 0)) {
+            LOG_WRN("expert_cache: could not lock %zu MiB of cache memory (%s); it may be paged out under pressure\n",
+                    (bytes_total + bytes_stream) >> 20, strerror(errno));
+        } else {
+            locked = true;
         }
     }
 #endif
@@ -197,14 +295,14 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
     for (int i = 0; i < p.io_threads; ++i) {
         threads.emplace_back([this] { io_loop(); });
     }
-    LOG_INF("expert_cache: %d slots/layer x %d tensors, %zu MiB locked, %d I/O threads, %s layout, request %zu KiB\n",
-            p.slots, n_tensors, bytes_total >> 20, p.io_threads,
+    LOG_INF("expert_cache: %d slots/layer x %d tensors, %zu MiB %s, %d I/O threads, %s layout, request %zu KiB\n",
+            p.slots, n_tensors, bytes_total >> 20, locked ? "locked" : "not locked", p.io_threads,
             bundled ? "bundled" : "split", max_read >> 10);
     LOG_INF("expert_cache: batches up to %d tokens use the slots; larger ones %s\n", p.max_tokens,
             sbuf ? "stream whole layers through 2 buffers" : "use the mmap");
     if (sbuf) {
-        LOG_INF("expert_cache: stream buffers 2 x %.1f MiB, %zu MiB locked\n",
-                bytes_stream / 2 / 1048576.0, bytes_stream >> 20);
+        LOG_INF("expert_cache: stream buffers 2 x %.1f MiB, %zu MiB %s\n",
+                bytes_stream / 2 / 1048576.0, bytes_stream >> 20, locked ? "locked" : "not locked");
     }
     return true;
 }
@@ -484,7 +582,25 @@ void expert_cache::prefetch_dense(const llama_model * model) {
     }
     LOG_INF("expert_cache: prefetched %zu non-expert tensors, %zu MiB, in %.2fs\n", ranges.size(), bytes >> 20, (now_ns() - t0) / 1e9);
 #else
-    GGML_UNUSED(model);
+    const uintptr_t page = (uintptr_t) sysconf(_SC_PAGESIZE);
+    size_t n = 0;
+    size_t bytes = 0;
+    const int64_t t0 = now_ns();
+    for (const auto & [name, t] : model->tensors_by_name) {
+        if (name.find("_exps") != std::string::npos || !t->data || !t->buffer || !ggml_backend_buffer_is_host(t->buffer)) {
+            continue;
+        }
+        // madvise wants a page-aligned start; WILLNEED only queues readahead, it does not wait for it
+        const uintptr_t a0 = (uintptr_t) t->data & ~(page - 1);
+        const uintptr_t a1 = (uintptr_t) t->data + ggml_nbytes(t);
+        if (madvise((void *) a0, a1 - a0, MADV_WILLNEED) != 0) {
+            LOG_WRN("expert_cache: madvise(WILLNEED) failed for %s (%s)\n", name.c_str(), strerror(errno));
+            return;
+        }
+        n++;
+        bytes += ggml_nbytes(t);
+    }
+    LOG_INF("expert_cache: prefetch queued for %zu non-expert tensors, %zu MiB, in %.2fs\n", n, bytes >> 20, (now_ns() - t0) / 1e9);
 #endif
 }
 
@@ -564,19 +680,12 @@ void expert_cache::prefetch(int il, const int32_t * experts, int n, uint64_t tok
 }
 
 bool expert_cache::read_expert(void * handle, char * staging, const layer_state & L, int expert, int slot) {
-#ifdef _WIN32
     if (bundled) {
         // the whole expert is one aligned, in-bounds range: one request, then
         // hand the staging buffer out across the slot tensors
         const uint64_t off = L.b_base + (uint64_t) expert * L.b_stride;
-        LARGE_INTEGER li;
-        li.QuadPart = (LONGLONG) off;
-        if (!SetFilePointerEx(handle, li, nullptr, FILE_BEGIN)) {
-            return false;
-        }
-        DWORD got = 0;
         const int64_t r0 = now_ns();
-        if (!ReadFile(handle, staging, (DWORD) L.b_stride, &got, nullptr) || got < (DWORD) L.b_stride) {
+        if (read_at(handle, staging, L.b_stride, off) < (int64_t) L.b_stride) {
             return false;
         }
         const int64_t r1 = now_ns();
@@ -596,14 +705,8 @@ bool expert_cache::read_expert(void * handle, char * staging, const layer_state 
         const uint64_t off = ts.file_off + (uint64_t) expert * ts.bytes_per_expert;
         const uint64_t a0  = off & ~(uint64_t) (SECTOR - 1);
         const uint64_t a1  = (off + ts.bytes_per_expert + SECTOR - 1) & ~(uint64_t) (SECTOR - 1);
-        LARGE_INTEGER li;
-        li.QuadPart = (LONGLONG) a0;
-        if (!SetFilePointerEx(handle, li, nullptr, FILE_BEGIN)) {
-            return false;
-        }
-        DWORD got = 0;
         const int64_t r0 = now_ns();
-        if (!ReadFile(handle, staging, (DWORD) (a1 - a0), &got, nullptr) || got < (off - a0) + ts.bytes_per_expert) {
+        if (read_at(handle, staging, a1 - a0, a0) < (int64_t) ((off - a0) + ts.bytes_per_expert)) {
             return false;
         }
         const int64_t r1 = now_ns();
@@ -615,38 +718,30 @@ bool expert_cache::read_expert(void * handle, char * staging, const layer_state 
         stats.n_reads++;
     }
     return true;
-#else
-    GGML_UNUSED(handle); GGML_UNUSED(staging); GGML_UNUSED(L); GGML_UNUSED(expert); GGML_UNUSED(slot);
-    return false;
-#endif
 }
 
 bool expert_cache::read_range(void * handle, char * staging, uint64_t off, size_t len, char * dst) {
-#ifdef _WIN32
     const uint64_t a0 = off & ~(uint64_t) (SECTOR - 1);
     const uint64_t a1 = (off + len + SECTOR - 1) & ~(uint64_t) (SECTOR - 1);
-    LARGE_INTEGER li;
-    li.QuadPart = (LONGLONG) a0;
-    if (!SetFilePointerEx(handle, li, nullptr, FILE_BEGIN)) {
-        return false;
-    }
-    DWORD got = 0;
-    if (!ReadFile(handle, staging, (DWORD) (a1 - a0), &got, nullptr) || got < (off - a0) + len) {
+    if (read_at(handle, staging, a1 - a0, a0) < (int64_t) ((off - a0) + len)) {
         return false;
     }
     memcpy(dst, staging + (off - a0), len);
     stats.stream_bytes += len;
     return true;
-#else
-    GGML_UNUSED(handle); GGML_UNUSED(staging); GGML_UNUSED(off); GGML_UNUSED(len); GGML_UNUSED(dst);
-    return false;
-#endif
 }
 
 void expert_cache::bench(int n) {
-#ifdef _WIN32
-    HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, nullptr);
-    char * staging = (char *) VirtualAlloc(nullptr, max_read + 2 * SECTOR, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    void * h = open_direct(path);
+    char * staging = alloc_aligned(max_read + 2 * SECTOR);
+    if (!h || !staging) {
+        LOG_ERR("expert_cache: io-bench: cannot open %s for unbuffered reads (%s)\n", path.c_str(), os_error().c_str());
+        if (h) {
+            close_direct(h);
+        }
+        free_aligned(staging);
+        return;
+    }
     std::vector<int> moe;
     for (int il = 0; il < (int) layers.size(); ++il) {
         if (!layers[il].tensors.empty()) {
@@ -666,7 +761,7 @@ void expert_cache::bench(int n) {
     const double sec = (now_ns() - t0) / 1e9;
     const double mb  = (stats.bytes_read.load() - b0) / 1e6;
     const double reqs = (double) std::max<long long>(1, stats.n_reads.load());
-    LOG_INF("expert_cache: io-bench: %d experts, %.0f MB in %.2fs = %.0f MB/s single thread; %.2f requests/expert, ReadFile %.2f ms/request, memcpy %.2f ms/request, request %.2f MB\n",
+    LOG_INF("expert_cache: io-bench: %d experts, %.0f MB in %.2fs = %.0f MB/s single thread; %.2f requests/expert, read %.2f ms/request, memcpy %.2f ms/request, request %.2f MB\n",
             n, mb, sec, mb / sec, reqs / n, stats.ns_read.load() / 1e6 / reqs,
             stats.ns_copy.load() / 1e6 / reqs, mb / reqs);
     stats.bytes_read = b0;
@@ -675,51 +770,40 @@ void expert_cache::bench(int n) {
     stats.n_reads = 0;
 
     // same handle, plain random reads of fixed sizes: is it the chunk geometry or the call?
-    LARGE_INTEGER fsz;
-    GetFileSizeEx(h, &fsz);
-    char * big = (char *) VirtualAlloc(nullptr, 4u << 20, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    const uint64_t fsz = file_size(h);
+    char * big = alloc_aligned(4u << 20);
     for (size_t len : { (size_t) (1280u << 10), (size_t) (2u << 20), (size_t) (4u << 20) }) {
         const int64_t t1 = now_ns();
         for (int i = 0; i < n; ++i) {
             rng = rng * 1664525u + 1013904223u;
-            const uint64_t off = ((uint64_t) rng % (uint64_t) ((fsz.QuadPart - (LONGLONG) len) / SECTOR)) * SECTOR;
-            LARGE_INTEGER li;
-            li.QuadPart = (LONGLONG) off;
-            SetFilePointerEx(h, li, nullptr, FILE_BEGIN);
-            DWORD got = 0;
-            ReadFile(h, big, (DWORD) len, &got, nullptr);
+            const uint64_t off = ((uint64_t) rng % ((fsz - len) / SECTOR)) * SECTOR;
+            read_at(h, big, len, off);
         }
         const double s2 = (now_ns() - t1) / 1e9;
         LOG_INF("expert_cache: io-bench: random %.2f MB reads x%d: %.0f MB/s, %.2f ms/req\n", len / 1048576.0, n, n * len / 1e6 / s2, s2 * 1e3 / n);
     }
-    VirtualFree(big, 0, MEM_RELEASE);
-    VirtualFree(staging, 0, MEM_RELEASE);
-    CloseHandle(h);
-#else
-    GGML_UNUSED(n);
-#endif
+    free_aligned(big);
+    free_aligned(staging);
+    close_direct(h);
 }
 
 void expert_cache::io_loop() {
-#ifdef _WIN32
-    HANDLE h = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                           FILE_FLAG_NO_BUFFERING, nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        LOG_ERR("expert_cache: cannot open %s for unbuffered reads (error %lu)\n", path.c_str(), GetLastError());
+    void * h = open_direct(path);
+    if (!h) {
+        LOG_ERR("expert_cache: cannot open %s for unbuffered reads (%s)\n", path.c_str(), os_error().c_str());
         return;
     }
     // with a sidecar, h reads bundles; stream chunks always come from the GGUF
-    HANDLE hg = h;
+    void * hg = h;
     if (sbuf && gguf_file != path) {
-        hg = CreateFileA(gguf_file.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                         FILE_FLAG_NO_BUFFERING, nullptr);
-        if (hg == INVALID_HANDLE_VALUE) {
-            LOG_ERR("expert_cache: cannot open %s for unbuffered reads (error %lu)\n", gguf_file.c_str(), GetLastError());
-            CloseHandle(h);
+        hg = open_direct(gguf_file);
+        if (!hg) {
+            LOG_ERR("expert_cache: cannot open %s for unbuffered reads (%s)\n", gguf_file.c_str(), os_error().c_str());
+            close_direct(h);
             return;
         }
     }
-    char * staging = (char *) VirtualAlloc(nullptr, max_read + 2 * SECTOR, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    char * staging = alloc_aligned(max_read + 2 * SECTOR);
     for (;;) {
         job j;
         {
@@ -733,8 +817,8 @@ void expert_cache::io_loop() {
         }
         if (j.stream >= 0) {
             if (!read_range(hg, staging, j.off, j.len, j.dst)) {
-                LOG_ERR("expert_cache: stream read failed for layer %d at %llu (error %lu)\n",
-                        j.il, (unsigned long long) j.off, GetLastError());
+                LOG_ERR("expert_cache: stream read failed for layer %d at %llu (%s)\n",
+                        j.il, (unsigned long long) j.off, os_error().c_str());
             }
             bool done;
             {
@@ -750,7 +834,7 @@ void expert_cache::io_loop() {
         const bool ok = read_expert(h, staging, layers[j.il], j.expert, j.slot);
         stats.ns_io += now_ns() - t0;
         if (!ok) {
-            LOG_ERR("expert_cache: read failed for layer %d expert %d (error %lu)\n", j.il, j.expert, GetLastError());
+            LOG_ERR("expert_cache: read failed for layer %d expert %d (%s)\n", j.il, j.expert, os_error().c_str());
         }
         {
             std::lock_guard<std::mutex> lk(mu);
@@ -758,10 +842,9 @@ void expert_cache::io_loop() {
         }
         cv.notify_all();
     }
-    VirtualFree(staging, 0, MEM_RELEASE);
+    free_aligned(staging);
     if (hg != h) {
-        CloseHandle(hg);
+        close_direct(hg);
     }
-    CloseHandle(h);
-#endif
+    close_direct(h);
 }

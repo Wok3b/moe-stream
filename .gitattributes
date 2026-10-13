@@ -2,3 +2,5 @@
 bench/prompts/*.txt -text
 # git apply wants the line endings the patches were made with
 patches/*.patch eol=lf
+# shell scripts break with CRLF
+*.sh eol=lf

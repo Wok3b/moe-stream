@@ -10,13 +10,15 @@ prompt. Instruct models like Gemma 4 produce garbage on bare text, so the moe-ru
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[1] / "llama.cpp" / "build" / "bin" / "Release" / "llama-server.exe"
+_BIN = Path(__file__).resolve().parents[1] / "llama.cpp" / "build" / "bin"
+SERVER = _BIN / "Release" / "llama-server.exe" if os.name == "nt" else _BIN / "llama-server"
 PORT = 8091
 
 
