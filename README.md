@@ -1,79 +1,141 @@
 # moe-stream
 
-Running Mixture-of-Experts models whose weights do not fit in RAM, on an
-ordinary laptop: no discrete GPU, 16 GB of memory, an NVMe SSD. The experts stay
-on disk and are streamed into an explicit, locked cache instead of being
-demand-paged by the operating system.
+**Bigger than your RAM. Faster than mmap. Bit-exact.**
+
+moe-stream runs Mixture-of-Experts models from an SSD on an ordinary laptop: no
+discrete GPU, 16 GB of RAM, an NVMe drive. Models bigger than the machine's
+memory, and models that fit while using only part of it. The experts stay on
+disk and are streamed into an explicit, locked cache that predicts what the next
+layer needs, instead of being demand-paged one 4 KB fault at a time by the
+operating system. It is a small set of commits on top of llama.cpp, and it
+generates exactly the same tokens as llama.cpp's own mmap path.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig9-budgets.png">
+  <img alt="Decode throughput under 6 to 12 GB memory budgets and no limit. Qwen3.6-35B-A3B, too big for RAM: mmap 0.8 to 3.5 tok/s, moe-stream 3.9 to 6.8, and 5.0 and 6.4 with today's defaults at 6 and 8 GB. Gemma 4 26B-A4B, which fits: mmap 2.0 to 6.3, moe-stream 5.1 to 10.1, and 5.9 and 9.3 with today's defaults" src="docs/img/fig9-budgets.png">
+</picture>
+
+- **Too big for RAM.** Qwen3.6-35B-A3B is 20.6 GiB on a 15.4 GB laptop.
+  moe-stream decodes it at **6.4 tok/s inside an 8 GB cgroup** and 6.8 with no
+  limit. Memory-mapped, the same model manages 0.8 to 3.5, and it gets slower
+  the less memory it has.
+- **Fits, and still faster.** Gemma 4 26B-A4B (10.5 GiB) runs at **10.1 tok/s**
+  against mmap's 6.3, and at 9.3 tok/s in 8 GB, leaving the other half of the
+  machine free. mmap in the same 8 GB: 4.9.
+
+| on a Ryzen 5 7430U, 15.4 GB, CPU only | weights | mmap decode | moe-stream decode | |
+|---|---|---|---|---|
+| Qwen3.6-35B-A3B UD-Q4_K_M, 6 GB budget | 20.6 GiB | 0.82 tok/s | **5.05 tok/s** | 6.2x |
+| Qwen3.6-35B-A3B UD-Q4_K_M, 8 GB budget | 20.6 GiB | 1.58 tok/s | **6.44 tok/s** | 4.1x |
+| Qwen3.6-35B-A3B UD-Q4_K_M, no limit | 20.6 GiB | 3.53 tok/s | **6.79 tok/s** | 1.9x |
+| Gemma 4 26B-A4B UD-IQ3_S, 6 GB budget | 10.5 GiB | 1.97 tok/s | **5.93 tok/s** | 3.0x |
+| Gemma 4 26B-A4B UD-IQ3_S, 8 GB budget | 10.5 GiB | 4.88 tok/s | **9.33 tok/s** | 1.9x |
+| Gemma 4 26B-A4B UD-IQ3_S, no limit | 10.5 GiB | 6.35 tok/s | **10.14 tok/s** | 1.6x |
+
+mmap runs start with the model out of the page cache, as after a reboot; the
+6 and 8 GB moe-stream numbers are today's defaults (prefetch + LFU), the others
+`--cache-slots auto`. Every cell is in [docs/NOTES.md](docs/NOTES.md), Results
+11 to 17, with the raw logs in `bench/results/linux/`.
+
+## Quickstart
+
+Linux, with a C++ compiler, CMake and git:
+
+```bash
+git clone --recursive https://github.com/Wok3b/moe-stream && cd moe-stream
+./build.sh
+./run.sh qwen
+```
+
+Then open **http://127.0.0.1:8080** and chat. The first `./run.sh qwen` offers
+to download the model (22.1 GB, checked against its SHA-256) into `~/models`;
+after that it starts straight away. The expert cache sizes itself from the
+memory you have.
+
+| | |
+|---|---|
+| `./run.sh gemma` | Gemma 4 26B-A4B instead (11.3 GB download) |
+| `./run.sh qwen --mem 8` | stay inside 8 GB and leave the rest of the machine alone |
+| `./run.sh qwen --no-limit` | use all the free RAM, the fastest (also the default) |
+| `./run.sh qwen --ctx 64k` | a longer context (default 16k, `--ctx max` for the full 256k) |
+| `./run.sh gemma --no-think` | answer straight away; both models reason first by default, which at ~10 tok/s can add minutes per reply |
+| `./run.sh ~/models/any-moe.gguf` | any other MoE GGUF |
+| `./run.sh qwen --port 9000` | anything else goes to `llama-server` |
+
+### How much context?
+
+Both models take up to 256k tokens. The context's memory comes out of the same
+budget as the expert cache: about **20 MiB per 1k tokens** on either model, so
+the default 16k costs about 0.4 GB, 64k about 1.3 GB and the full 256k about
+5 GB. The cache sizes itself after the context is allocated, so nothing breaks;
+each extra GB of context is about 14 fewer cache slots and somewhat slower
+decoding, which matters most under a tight `--mem`.
+
+The practical limit is time, not memory: a long prompt has to be read through
+every layer's experts. On Qwen in 8 GB a 756-token prompt takes 22 s, so a
+pasted document of several thousand tokens takes minutes before the first
+reply token. Short prompts and long conversations built up turn by turn are
+the sweet spot. `run.sh` serves one request at a time (`-np 1`), which leaves
+the most memory for the cache; pass `-np 4` to serve several.
+
+On Windows, `.\build.ps1` builds the same tools with Visual Studio. [SETUP.md](SETUP.md)
+has the server's `MOE_*` settings, the `llama-moe-run` benchmark tool and
+everything else.
+
+## How it works
+
+1. **An expert cache we own.** Experts live in locked slots in our own memory,
+   filled by `O_DIRECT` / unbuffered reads on an I/O thread pool, and addressed
+   through a rewritten `ffn_moe_slot_ids` tensor so `mul_mat_id` indexes the
+   cache instead of the model. The page cache is out of the picture.
+2. **Sized from the memory there is.** `--cache-slots auto` takes the cgroup's
+   `memory.max` (or free RAM less 15%), subtracts the dense weights, the stream
+   buffers and a reserve, and fills the rest. Too many slots is worse than none,
+   because the dense weights start faulting, so it never guesses high.
+3. **The next layer is predicted, not waited for.** Layer L+1's router applied
+   to the residual entering layer L picks most of the experts L+1 will use. A
+   predictor thread inside the cache reads them while L computes.
+4. **Eviction by decayed use counts.** Replayed traces showed LFU with a
+   half-life of 8 tokens beats LRU on both models, and makes a wrong guess the
+   first thing evicted.
+5. **Prefill reads what the prompt picks.** Prompt batches stream through
+   per-layer buffers that hold only the experts predicted or picked, not the
+   whole layer:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig10-prefill.png">
+  <img alt="Prompt processing time, whole layers against only the predicted or picked experts: 2.3x faster on a 33-token Qwen prompt, 1.2x on 279 tokens, 1.4 to 1.6x on Gemma" src="docs/img/fig10-prefill.png">
+</picture>
+
+**The correctness check that matters:** the `tokens hash` printed by
+`llama-moe-run` must be identical with and without `--cache-slots`, for the same
+prompt and greedy sampling. If it is not, the cache is serving the wrong
+weights. Every run behind the charts above passes it.
+
+## Where it started: why the page cache cannot keep up
+
+The first half of the project measured *why* mmap fails, on a smaller model
+(OLMoE-1B-7B Q4_K_M, 3.92 GiB) and a different laptop (Core i5-1334U, 16 GB,
+Samsung BM9C1 NVMe, Windows). **Read the write-up: [Why a 16 GB laptop can't run
+a big MoE model from SSD, and what I built to fix
+it](docs/streaming-moe-on-a-laptop.md).**
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig0-headline.png">
   <img alt="Three measured comparisons: 10.1x more read throughput, 1.6x decode throughput from the explicit expert cache, 1.5x more from the bundled layout" src="docs/img/fig0-headline.png">
 </picture>
 
-**Read the write-up: [Why a 16 GB laptop can't run a big MoE model from SSD, and
-what I built to fix it](docs/streaming-moe-on-a-laptop.md).** It has the whole
-story with charts; this page is the short version.
-
-Everything below was measured on one laptop (Core i5-1334U, 16 GB DDR4-3200,
-Samsung BM9C1 NVMe, CPU only) with OLMoE-1B-7B-0924-Instruct Q4_K_M: 16 layers,
-64 experts, top-8, 3.92 GiB on disk.
-
-## The problem: the page cache reads at a tenth of the drive's speed
-
-Memory-map the model and let the OS handle it, and the experts arrive one 4 KB
-fault at a time, 25 000 to 50 000 faults per generated token. That path moved
-**148 MB/s** on a drive that does **1496 MB/s** for expert-sized random reads.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig3-disk-patterns.png">
-  <img alt="Read throughput by request size, with the rate demand paging actually achieved marked" src="docs/img/fig3-disk-patterns.png">
-</picture>
-
-The drive is not slow. The requests are small, and nothing tells the kernel what
-to read next, so it can only react to a fault that already happened. Predicting
-the experts and calling `PrefetchVirtualMemory` does not fix it either: that
-bought between 0 and 25%, because the prefetch call blocks the compute thread,
-cannot be parallelised, and the pages get evicted before use.
-
-## What works: owning the I/O path
-
-Experts live in locked slots in our own memory, filled by unbuffered reads on an
-I/O thread pool, addressed through a rewritten `ffn_moe_slot_ids` tensor so
-`mul_mat_id` indexes the cache instead of the model. The page cache is out of
-the picture entirely.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig6-cache-ab.png">
-  <img alt="Decode throughput and page faults per token, page cache against explicit cache" src="docs/img/fig6-cache-ab.png">
-</picture>
-
-**1.42x to 1.56x at an equal RAM budget**, and page faults per token fall from
-25 000 - 50 000 to around 850.
-
-## Then give each expert one contiguous home on disk
-
-A GGUF stores the experts as three stacked tensors, so fetching one expert is
-three reads from three places in the file. `llama-moe-bundle` writes a sidecar
-in which each expert's matrices sit back to back, and the cache reads whole
-experts from it. The GGUF is untouched and still loads normally.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/dark/fig8-bundled-layout.png">
-  <img alt="Decode throughput, read requests per token and per-thread read throughput, split against bundled" src="docs/img/fig8-bundled-layout.png">
-</picture>
-
-**1.52x to 1.61x more**, with bytes per token identical on both sides. Requests
-per token drop by exactly 3x and the drive gives 1040 MB/s per I/O thread
-instead of 649. Output is bit-exact: the generated token hash is identical on
-the mmap path and on every cache and layout configuration.
-
-## Three more things the measurements settled
-
-| | |
-|---|---|
-| **Prediction is free** | Applying layer L+1's router to the residual entering layer L's FFN picks the exact top-8 **84%** of the time, and covers **97%** of the real choice if you fetch 16 experts. No training, no extra parameters. |
-| **There is no hot set** | Covering 80% of expert selections needs **38 of the 64** experts, so cache policy is a small lever on a load-balanced model. |
-| **K=4 is not free** | Halving the active experts halves the bytes but costs **+41%** perplexity on wikitext-2 and **+87%** on technical prose. K=6 costs 9 to 12% for 25% fewer bytes and is a real knob. |
+- **The drive is not slow, the requests are.** Demand paging moved **148 MB/s**
+  on a drive that does **1496 MB/s** for expert-sized random reads, at 25 000 to
+  50 000 faults per token. `PrefetchVirtualMemory` hints bought 0 to 25%.
+- **Owning the I/O path: 1.42x to 1.56x** at an equal RAM budget, with page
+  faults per token down to around 850.
+- **One contiguous home per expert: 1.52x to 1.61x more.** `llama-moe-bundle`
+  writes a sidecar with each expert's matrices back to back, so a miss is one
+  read instead of three. The GGUF is untouched.
+- **Prediction is free:** the stale router picks the exact top-8 84% of the
+  time. **There is no hot set** on OLMoE (38 of 64 experts cover 80% of
+  picks). **K=4 is not free:** +41 to +87% perplexity.
 
 <p align="center">
   <picture>
@@ -86,95 +148,60 @@ the mmap path and on every cache and layout configuration.
   </picture>
 </p>
 
-## How to reproduce
+## Reproducing the measurements
 
-[SETUP.md](SETUP.md) has the details. On Windows with Visual Studio and Python:
+Linux, with a user systemd (no root needed):
 
-```powershell
-git clone --recursive https://github.com/Wok3b/moe-stream; cd moe-stream
-.\build.ps1
-python -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/OLMoE-1B-7B-0924-Instruct-GGUF', filename='OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf', local_dir=r'C:\models')"
+```bash
+MODEL=~/models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf PROMPT=bench/prompts/qwen36-story.txt \
+  SLOTS=auto TAG=qwen bench/mem-budget.sh 6G 8G 10G 12G infinity
 ```
 
-On Linux (C++ compiler, CMake, git): `git clone --recursive https://github.com/Wok3b/moe-stream && cd moe-stream && ./build.sh`.
-
-Build the bundled sidecar and run the comparison:
-
-```powershell
-.\llama.cpp\build\bin\Release\llama-moe-bundle.exe -m C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf --verify
-.\bench\ab-layout.ps1 -Model C:\models\OLMoE-1B-7B-0924-Instruct-Q4_K_M.gguf -Slots 32 -Rounds 3
-```
-
-The rest of the measurements:
-
-```powershell
-python bench\disk-bench.py C:\models\<model>.gguf --json bench\results\disk-bench.json
-.\bench\run-bench.ps1      -Model C:\models\<model>.gguf -Threads "4,6,8,10,12"
-.\bench\sweep-pressure.ps1 -Model C:\models\<model>.gguf -AvailableGB 6,3,2,1.5 -Threads 10
-.\bench\ab-prefetch.ps1    -Model C:\models\<model>.gguf -AvailableGB 2.5 -Configs "0 8","2 8"
-.\bench\ppl-k-sweep.ps1    -Model C:\models\<model>.gguf -Arch olmoe -Text C:\models\eval\wikitext-2-raw\wiki.test.raw -K 8,6,4
-python bench\make-charts.py
-```
-
-`sweep-pressure` and `ab-prefetch` pin RAM with `bench/ram-eater.py` to simulate
-a smaller machine, so the box feels sluggish while they run. Every figure above
-is regenerated by `bench/make-charts.py` from the files in `bench/results/`, so
-the charts and the raw data cannot drift apart.
-
-**The correctness check that matters:** the `tokens hash` printed by
-`llama-moe-run` must be identical with and without `--cache-slots` and with and
-without `--experts-file`, for the same prompt and greedy sampling. If it is not,
-the cache is serving the wrong weights.
+`mem-budget.sh` runs mmap and the cache under `MemoryMax`, with the model file
+evicted from the page cache before every run (`bench/evict-file.py`). Every
+figure is regenerated by `python bench/make-charts.py` from the files in
+`bench/results/`, so the charts and the raw data cannot drift apart. The
+Windows harness (`bench/*.ps1`) is described in [SETUP.md](SETUP.md).
 
 ## Layout
 
 ```
 build.sh         build everything (build.ps1 on Windows)
+run.sh           download a model and serve it with the expert cache
 patches/         our llama.cpp commits as patch files, for reading
-tools/moe-run/   decode with the explicit expert cache and the predictive prefetcher,
+tools/moe-run/   the expert cache, router predictor and llama-moe-run,
                  plus llama-moe-bundle, the expert-bundled layout converter
 tools/moe-trace/ dump router decisions per layer and token
-bench/           measurement harness (PowerShell + Python)
-bench/results/   raw llama-bench / moe-run JSON and the CSV summaries
+bench/           measurement harness (shell, Python, PowerShell)
+bench/results/   raw moe-run / llama-bench output and the CSV summaries
 docs/            the write-up, and NOTES.md: every result in the order measured
 llama.cpp/       submodule: Wok3b/llama.cpp, branch moe-stream (upstream 972d231 + our commits)
-C:\models\       GGUF weights and the .experts sidecars (outside the repo)
 ```
 
 ## Status
 
-Done and measured: baseline curves, the routing trace and the stale-router
-predictor, the failed page-cache prefetch spike, the explicit expert cache, the
-K sweep, and the expert-bundled layout. Results 1 to 8 in
-[docs/NOTES.md](docs/NOTES.md) have the numbers in the order they were taken,
-including what did not work and why.
+Done and measured, in [docs/NOTES.md](docs/NOTES.md) in the order taken,
+including what did not work: the page-cache baseline and the failed prefetch
+spike (Results 1-5), the explicit cache and bundled layout (6-8), Gemma 4 and
+`llama-server` (9-10), the Linux port under cgroup budgets (11), a model twice
+the size of RAM (12), auto sizing (13), prefetch that pays (14), LFU eviction
+(15), clang vs GCC, no difference (16), and prompt-aware prefill (17).
 
-**Gemma 4 26B-A4B and llama-server** (Results 9 and 10, 2026-10-13, a second
-laptop): the cache runs bit-exact on Gemma 4 (patch 0003, per-expert scales),
-inside `llama-server` (0004), and prompt processing now streams whole layers
-through two buffers instead of paging every expert in (0005). Gemma 4 does have
-a hot set: 64 of 128 slots serve 96% of decode lookups. In a real grading
-workload the moe-stream server ties mmap on wall time while leaving ~0.9 GB of
-RAM free instead of tens of MB. The stale-router prefetcher is a net loss on
-this model (66-70% prediction accuracy).
+Next, in the order it matters:
 
-Open, in the order it matters:
-
-1. **Done: a model that does not fit.** Qwen3.6-35B-A3B (20.6 GiB) on a 16 GB
-   laptop decodes at 6.4 tok/s in an 8 GB cgroup and 7.3 unlimited, against
-   mmap's 0.8-3.5 (docs/NOTES.md, Results 12-17).
-2. **Asynchronous I/O.** The reader is synchronous per thread, so queue depth
-   equals thread count; the drive wants 2 to 4 from a single issuer.
-3. **Done: Linux.** Ported (O_DIRECT, mlock, madvise); cgroup memory limits
-   replace pinned pages for the measurements (Results 11).
-4. **Upstream.** The expert-cache hook is small and architecture-agnostic, and
-   upstream llama.cpp is already moving this way with `--load-mode dio` and lazy
-   tensors.
+1. **Cheaper wrong guesses.** Prefetch costs 30% more reads; guesses that land
+   only in free or cold slots could keep that without evicting hot experts.
+2. **Bundled sidecar for the big models**: one read per miss instead of two or
+   three, worth 1.5x on OLMoE.
+3. **The shared expert during the miss wait.** Qwen's shared expert does not
+   depend on routing, so computing it while misses load hides I/O.
+4. **Upstream.** The expert-cache hook is small and architecture agnostic, and
+   llama.cpp is already moving this way with `--load-mode dio` and lazy tensors.
 
 ## Prior art
 
-This is the x86/Windows counterpart to what [Edge0](https://github.com/Edge0-AI/Edge0)
-does on Apple Silicon with MLX. The ideas it builds on are credited in
+The x86 counterpart to what [Edge0](https://github.com/Edge0-AI/Edge0) does on
+Apple Silicon with MLX. The ideas it builds on are credited in
 [docs/NOTES.md](docs/NOTES.md): Pre-gated MoE, LLM in a flash, PowerInfer-2,
 MoE-Infinity, Fiddler, ExpertFlow, HOBBIT, and llama.cpp itself, which is the
 baseline every number here is measured against.

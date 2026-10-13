@@ -473,6 +473,155 @@ def fig_layout(res, out):
     return save(fig, out, "fig8-bundled-layout.png")
 
 
+# ------------------------------------------- Linux runs (Results 11-17)
+
+BUDGETS = (("6G", "6 GB"), ("8G", "8 GB"), ("10G", "10 GB"), ("12G", "12 GB"),
+           ("infinity", "no limit"))
+
+
+def read_runs(path):
+    """Blocks of `== tag rc=N` followed by moe-run's summary lines, as
+    {tag without the round number: [{"decode": tok/s, "prefill_s": s}, ...]}."""
+    runs = {}
+    if not os.path.exists(path):
+        return runs
+    cur = None
+    for line in open(path, encoding="utf-8"):
+        if line.startswith("== "):
+            tag = line.split()[1]
+            cur = {}
+            runs.setdefault(tag.rsplit("-", 1)[0], []).append(cur)
+        elif cur is not None and line.startswith("decode "):
+            cur["decode"] = float(line.split("(")[1].split()[0])
+        elif cur is not None and line.startswith("prefill "):
+            cur["prefill_s"] = float(line.split(" in ")[1].split("s")[0])
+    return runs
+
+
+def budget_runs(res, model):
+    """Decode tok/s per budget for one model, or None if a file is missing.
+
+    mmap is the single cold run per budget from Results 11/12; the cache is
+    --cache-slots auto, three rounds (Results 13); the defaults (prefetch +
+    decayed LFU) are the median of the interleaved A/B in lfu-ab.txt, which
+    only covers 6 and 8 GB.
+    """
+    lin = os.path.join(res, "linux")
+    if model == "qwen":
+        mmap_name, auto_name, short = "qwen-%s-mmap.json", "qwen-auto-r%d-%s-sauto-stream.json", "q"
+    else:
+        mmap_name, auto_name, short = "mem-%s-mmap.json", "gemma-auto-r%d-%s-sauto-stream.json", "g"
+    lfu = read_runs(os.path.join(lin, "lfu-ab.txt"))
+    rows = []
+    for b, _ in BUDGETS:
+        p = os.path.join(lin, mmap_name % b)
+        rr = [os.path.join(lin, auto_name % (r, b)) for r in (1, 2, 3)]
+        if not os.path.exists(p) or not all(os.path.exists(x) for x in rr):
+            return None
+        runs = lfu.get("%s-lfu-%s" % (short, b))
+        rows.append((json.load(open(p))["gen_tps"],
+                     [json.load(open(x))["gen_tps"] for x in rr],
+                     sorted(r["decode"] for r in runs)[len(runs) // 2] if runs else None))
+    return rows
+
+
+def budget_panel(ax, rows, title, sub, top):
+    w = 0.26
+    for i, (mm, auto, dflt) in enumerate(rows):
+        mean = sum(auto) / len(auto)
+        n = 2 if dflt is None else 3
+        xs = [i + (j - (n - 1) / 2) * (w + 0.02) for j in range(n)]
+        b1 = ax.bar([xs[0]], [mm], width=w, color=S1, linewidth=0)
+        b2 = ax.bar([xs[1]], [mean], width=w, color=S2, linewidth=0)
+        label_bars(ax, b1, "{:.1f}")
+        label_bars(ax, b2, "{:.1f}", dy=8)
+        jit = [xs[1] + (k - 1) * 0.065 for k in range(len(auto))]
+        ax.plot(jit, auto, "o", color=SURFACE, markersize=3.6,
+                markeredgewidth=1.0, markeredgecolor=INK2, zorder=3)
+        hi = max(auto)
+        if dflt is not None:
+            hi = max(hi, dflt)
+            label_bars(ax, ax.bar([xs[2]], [dflt], width=w, color=S3, linewidth=0), "{:.1f}")
+        ax.annotate("%.1fx" % (mean / mm), (i, hi + top * 0.11),
+                    ha="center", fontsize=10, color=INK, fontweight="bold")
+    ax.set_xticks(range(len(BUDGETS)))
+    ax.set_xticklabels([lab for _, lab in BUDGETS])
+    ax.set_xlabel("memory budget (cgroup MemoryMax)")
+    ax.set_title(title, fontsize=10.5, pad=20)
+    ax.annotate(sub, (0.5, 1.0), xycoords="axes fraction", textcoords="offset points",
+                xytext=(0, 6), ha="center", fontsize=7.5, color=INK2)
+    grid_y(ax)
+
+
+def fig_budgets(res, out):
+    """The README headline: the same two curves for a model that does not fit
+    in RAM and one that does, on a shared tok/s axis."""
+    qwen, gemma = budget_runs(res, "qwen"), budget_runs(res, "gemma")
+    if qwen is None or gemma is None:
+        return None
+    top = max(max(mm, max(auto), d or 0) for rows in (qwen, gemma) for mm, auto, d in rows)
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11.4, 4.0), sharey=True)
+    budget_panel(a1, qwen, "Too big for RAM: Qwen3.6-35B-A3B",
+                 "20.6 GiB of weights on a 15.4 GB laptop, UD-Q4_K_M", top)
+    budget_panel(a2, gemma, "Fits, and still faster: Gemma 4 26B-A4B",
+                 "10.5 GiB of weights on the same laptop, UD-IQ3_S", top)
+    a1.set_ylabel("decode tok/s")
+    a1.set_ylim(0, top * 1.3)
+    a2.tick_params(labelleft=True)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in (S1, S2, S3)]
+    fig.legend(handles, ["mmap (the OS page cache)", "moe-stream, --cache-slots auto (mean of 3, dots the runs)",
+                         "+ prefetch + LFU, today's default (median of 3)"],
+               loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.07), frameon=False, fontsize=8.5)
+    fig.text(0.5, -0.13, "Ryzen 5 7430U, CPU only, Linux. MemoryMax=X with swap off, model file evicted from the page cache "
+                         "before every run, 128 greedy tokens, same tokens hash on every run.\n"
+                         "The multiplier is moe-stream (auto slots) over mmap at the same budget.",
+             ha="center", fontsize=7.5, color=INK2)
+    return save(fig, out, "fig9-budgets.png")
+
+
+def fig_prefill(res, out):
+    """Results 17: prompt time, whole layers streamed against predicted + picked experts."""
+    runs = read_runs(os.path.join(res, "linux", "prefill-ab.txt"))
+    prompts = (("q-story", "Qwen story\n33 tokens"), ("q-code", "Qwen code\n48 tokens"),
+               ("q-notes", "Qwen notes\n279 tokens"), ("g-story", "Gemma story\n34 tokens"),
+               ("g-code", "Gemma code\n49 tokens"))
+    rows = []
+    for key, lab in prompts:
+        old, new = runs.get("pf-%s-0" % key), runs.get("pf-%s--1" % key)
+        if not old or not new:
+            return None
+        rows.append((lab, [r["prefill_s"] for r in old], [r["prefill_s"] for r in new]))
+
+    fig, ax = plt.subplots(figsize=(8.6, 3.4))
+    w = 0.34
+    top = 0.0
+    for i, (lab, old, new) in enumerate(rows):
+        for j, (vals, color, name) in enumerate(((old, S1, "whole layers (Results 10)"),
+                                                 (new, S2, "only the experts predicted or picked"))):
+            pos = i + (j - 0.5) * (w + 0.03)
+            mean = sum(vals) / len(vals)
+            top = max(top, max(vals))
+            bars = ax.bar([pos], [mean], width=w, color=color, linewidth=0,
+                          label=name if i == 0 else None)
+            label_bars(ax, bars, "{:.1f}", dy=9)
+            jit = [pos + (n - 1) * 0.08 for n in range(len(vals))]
+            ax.plot(jit, vals, "o", color=SURFACE, markersize=4.5,
+                    markeredgewidth=1.2, markeredgecolor=INK2, zorder=3)
+        ax.annotate("%.1fx" % ((sum(old) / len(old)) / (sum(new) / len(new))),
+                    (i, max(old) + top * 0.13), ha="center", fontsize=10, color=INK, fontweight="bold")
+    ax.set_xticks(range(len(rows)))
+    ax.set_xticklabels([r[0] for r in rows])
+    ax.set_ylabel("prompt processing, seconds")
+    ax.set_title("Prefill reads what the prompt uses")
+    ax.set_ylim(0, top * 1.35)
+    grid_y(ax)
+    ax.legend(loc="upper right", fontsize=8)
+    fig.text(0.5, -0.1, "8 GB cgroup, cold page cache, runs interleaved, 3 rounds; "
+                        "bars the mean and dots the individual runs; identical output in both modes",
+             ha="center", fontsize=7.5, color=INK2)
+    return save(fig, out, "fig10-prefill.png")
+
+
 def main():
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ap = argparse.ArgumentParser()
@@ -487,7 +636,8 @@ def main():
         os.makedirs(out, exist_ok=True)
         style(theme)
         for f in (fig_headline, fig_threads, fig_pressure, fig_disk, fig_router,
-                  fig_popularity, fig_ab, fig_ppl, fig_layout):
+                  fig_popularity, fig_ab, fig_ppl, fig_layout,
+                  fig_budgets, fig_prefill):
             if f(a.results, out) is None:
                 print("skipped", f.__name__, "- input not present")
 

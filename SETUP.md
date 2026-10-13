@@ -233,6 +233,16 @@ Binaries land in `llama.cpp/build/bin/` (no `Release/`, no `.exe`); `bench/chat-
 picks the right server path. Keep the model on a Linux filesystem: reading it through ntfs3
 distorts every I/O number.
 
+`./run.sh qwen|gemma|<model.gguf> [--mem 8 | --no-limit] [--ctx 32k] [--no-think] [llama-server args]` is
+the short way to the server: it downloads the two reference models into `$MODELS` (default
+`~/models`) after a disk check and verifies their SHA-256, then starts `llama-server -c 16384
+-np 1 -lzm on` with `MOE_CACHE_SLOTS=auto` and `MOE_IO_THREADS=4` (set either to override).
+`--mem` runs it in a `systemd-run` scope with `MemoryMax` and no swap (a bare number is GB);
+`--ctx` takes a count, `32k` or `max`; `--no-think` is `-rea off`. Both reference models keep about 20 KiB of KV per token,
+in their full-attention layers only; Qwen adds ~60 MiB of linear-attention state per sequence and
+Gemma ~300 MiB for its sliding-window layers. `-np 1` because the server's automatic four
+sequences would reserve that state four times, out of the expert cache.
+
 `mlock` of the cache fails at the default `ulimit -l` (8 MiB on Arch). Under
 `MemorySwapMax=0` it does not matter: anonymous memory in that scope cannot be swapped anyway.
 Elsewhere raise the limit in `/etc/security/limits.conf` (`memlock`).
