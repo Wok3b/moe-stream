@@ -14,7 +14,7 @@ index 4adaaceef..7423e2deb 100644
  
  set(TARGET llama-server-impl)
 diff --git a/tools/server/server-context.cpp b/tools/server/server-context.cpp
-index b6835e434..ef82ee0e8 100644
+index b6835e434..7155eff34 100644
 --- a/tools/server/server-context.cpp
 +++ b/tools/server/server-context.cpp
 @@ -16,6 +16,7 @@
@@ -38,7 +38,7 @@ index b6835e434..ef82ee0e8 100644
  
  constexpr int HTTP_POLLING_SECONDS = 1;
  
-+// moe-stream: with MOE_CACHE_SLOTS > 0, MoE experts come from an explicit cache (examples/moe-run) instead of
++// moe-stream: with MOE_CACHE_SLOTS > 0 or auto, MoE experts come from an explicit cache (examples/moe-run) instead of
 +// the mmap: small batches from the slots, larger ones (prompt processing) streamed layer by layer unless
 +// MOE_STREAM_PREFILL=0. MOE_IO_THREADS, MOE_CACHE_MAX_TOKENS and MOE_EXPERTS_FILE (bundled sidecar) are optional.
 +struct moe_stream {
@@ -79,12 +79,13 @@ index b6835e434..ef82ee0e8 100644
  static common_speculative_output_limits server_output_limits(const common_params & params) {
      if (params.embedding ||
              (params.pooling_type != LLAMA_POOLING_TYPE_UNSPECIFIED && params.pooling_type != LLAMA_POOLING_TYPE_NONE)) {
-@@ -1096,6 +1137,22 @@ private:
+@@ -1096,6 +1137,23 @@ private:
              params_base.load_progress_callback_user_data = &load_progress_text;
          }
  
 +        expert_cache_params ecp;
-+        ecp.slots      = moe_stream_env("MOE_CACHE_SLOTS", 0);
++        const char * slots_env = getenv("MOE_CACHE_SLOTS");
++        ecp.slots      = slots_env && strcmp(slots_env, "auto") == 0 ? expert_cache_params::SLOTS_AUTO : moe_stream_env("MOE_CACHE_SLOTS", 0);
 +        ecp.io_threads = moe_stream_env("MOE_IO_THREADS", ecp.io_threads);
 +        ecp.max_tokens = moe_stream_env("MOE_CACHE_MAX_TOKENS", 0); // 0: slots / experts per token
 +        ecp.stream_prefill = moe_stream_env("MOE_STREAM_PREFILL", 1) != 0;
@@ -93,7 +94,7 @@ index b6835e434..ef82ee0e8 100644
 +        }
 +        llama_expert_cache_clear();
 +        g_moe_stream.reset();
-+        if (ecp.slots > 0) {
++        if (ecp.slots != 0) {
 +            g_moe_stream = std::make_unique<moe_stream>();
 +            params_base.cb_eval           = moe_stream_cb_eval;
 +            params_base.cb_eval_user_data = g_moe_stream.get();
@@ -102,7 +103,7 @@ index b6835e434..ef82ee0e8 100644
          llama_init = common_init_from_params(params_base);
  
          model_tgt = llama_init->model();
-@@ -1111,6 +1168,11 @@ private:
+@@ -1111,6 +1169,11 @@ private:
              return false;
          }
  

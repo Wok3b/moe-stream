@@ -27,6 +27,9 @@
 namespace {
 constexpr size_t SECTOR = 4096; // unbuffered I/O alignment
 constexpr size_t STREAM_CHUNK = 4u << 20; // layer streaming: request size, one job each
+// MemAvailable counts page cache the rest of the system still uses; taking it all made the dense weights
+// fault again at 111 Qwen slots where 106 ran clean (Results 13), so this share of RAM stays free
+constexpr double SYSTEM_MARGIN = 0.15;
 
 int64_t now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -64,6 +67,17 @@ void free_aligned(char * p) {
 }
 std::string os_error() {
     return "error " + std::to_string(GetLastError());
+}
+// physical memory the process can still get, less SYSTEM_MARGIN; job object limits are not checked
+uint64_t available_memory(const char ** source) {
+    MEMORYSTATUSEX ms;
+    ms.dwLength = sizeof(ms);
+    *source = "system";
+    if (!GlobalMemoryStatusEx(&ms)) {
+        return 0;
+    }
+    const uint64_t margin = (uint64_t) (ms.ullTotalPhys * SYSTEM_MARGIN);
+    return ms.ullAvailPhys > margin ? ms.ullAvailPhys - margin : 0;
 }
 #else
 void * open_direct(const std::string & path) {
@@ -106,6 +120,75 @@ void free_aligned(char * p) {
 }
 std::string os_error() {
     return strerror(errno);
+}
+
+uint64_t read_u64(const std::string & path, const char * key = nullptr) {
+    FILE * f = fopen(path.c_str(), "r");
+    if (!f) {
+        return UINT64_MAX;
+    }
+    char line[256];
+    uint64_t v = UINT64_MAX;
+    const size_t klen = key ? strlen(key) : 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (!key) {
+            if (strncmp(line, "max", 3) != 0) {
+                v = strtoull(line, nullptr, 10);
+            }
+            break;
+        }
+        if (strncmp(line, key, klen) == 0) {
+            v = strtoull(line + klen, nullptr, 10);
+            break;
+        }
+    }
+    fclose(f);
+    return v;
+}
+
+// physical memory the process can still get: MemAvailable less SYSTEM_MARGIN, capped at every cgroup v2
+// level above us by limit - (usage - page cache), since the kernel reclaims page cache before it refuses
+uint64_t available_memory(const char ** source) {
+    const uint64_t kb_avail = read_u64("/proc/meminfo", "MemAvailable:");
+    const uint64_t kb_total = read_u64("/proc/meminfo", "MemTotal:");
+    const uint64_t margin = kb_total == UINT64_MAX ? 0 : (uint64_t) (kb_total * 1024 * SYSTEM_MARGIN);
+    uint64_t avail = kb_avail == UINT64_MAX ? 0 : kb_avail * 1024;
+    avail = avail > margin ? avail - margin : 0;
+    *source = "system";
+    FILE * f = fopen("/proc/self/cgroup", "r");
+    if (!f) {
+        return avail;
+    }
+    char line[4096];
+    std::string dir;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "0::", 3) == 0) {
+            dir = line + 3;
+            dir.erase(dir.find_last_not_of("\r\n") + 1);
+            break;
+        }
+    }
+    fclose(f);
+    while (!dir.empty()) {
+        const std::string base = "/sys/fs/cgroup" + (dir == "/" ? std::string() : dir);
+        const uint64_t max = read_u64(base + "/memory.max");
+        if (max != UINT64_MAX) {
+            const uint64_t cur  = read_u64(base + "/memory.current");
+            const uint64_t file = read_u64(base + "/memory.stat", "file ");
+            const uint64_t used = cur == UINT64_MAX ? 0 : cur - std::min(cur, file == UINT64_MAX ? 0 : file);
+            const uint64_t left = max > used ? max - used : 0;
+            if (left < avail) {
+                avail   = left;
+                *source = "cgroup memory.max";
+            }
+        }
+        if (dir == "/") {
+            break;
+        }
+        const size_t slash = dir.rfind('/');
+        dir = slash == 0 ? "/" : dir.substr(0, slash);
+    }
+    return avail;
 }
 #endif
 } // namespace
@@ -198,6 +281,12 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
     if (n_tensors == 0) {
         LOG_ERR("expert_cache: no MoE expert tensors found\n");
         return false;
+    }
+    if (p.slots < 0) {
+        p.slots = auto_slots(model);
+        if (p.slots <= 0) {
+            return false;
+        }
     }
 
     // a batch must never need more distinct experts in a layer than there are slots, or on_slot_ids
@@ -305,6 +394,46 @@ bool expert_cache::init(const llama_model * model, const std::string & gguf_path
                 bytes_stream / 2 / 1048576.0, bytes_stream >> 20, locked ? "locked" : "not locked");
     }
     return true;
+}
+
+// Everything else has to fit first: the non-expert weights (mmap, faulting them is what made 64 slots at
+// 6 GB slower than mmap, Results 11), the stream buffers and a reserve for compute buffers that are
+// allocated but not touched yet. KV and anything already allocated is in the usage the OS reports.
+int expert_cache::auto_slots(const llama_model * model) {
+    const size_t align = ggml_backend_buft_get_alignment(ggml_backend_cpu_buffer_type());
+    size_t per_slot  = 0; // one expert in every MoE layer
+    size_t layer_max = 0;
+    for (int il : moe_layers) {
+        size_t sz = 0;
+        for (const auto & ts : layers[il].tensors) {
+            per_slot += ts.bytes_per_expert;
+            sz       += GGML_PAD(ggml_nbytes(ts.orig), align);
+        }
+        layer_max = std::max(layer_max, sz);
+    }
+    size_t dense = 0;
+    for (const auto & [name, t] : model->tensors_by_name) {
+        if (name.find("_exps") == std::string::npos && t->buffer && ggml_backend_buffer_is_host(t->buffer)) {
+            dense += ggml_nbytes(t);
+        }
+    }
+    const size_t stream  = p.stream_prefill ? 2 * layer_max : 0;
+    const char * source  = nullptr;
+    const uint64_t avail = available_memory(&source);
+    const size_t reserve = 256u << 20; // compute buffers allocated but not touched yet, run-to-run slack
+    const size_t need    = dense + stream + reserve;
+    const int n_used = std::max(1, (int) model->hparams.n_expert_used_arr[moe_layers[0]]);
+    int slots = avail > need ? (int) std::min<uint64_t>((avail - need) / per_slot, (uint64_t) n_expert) : 0;
+    LOG_INF("expert_cache: auto: %llu MiB available (%s) - %zu dense - %zu stream - %zu reserve = %d slots of %.1f MiB\n",
+            (unsigned long long) (avail >> 20), source, dense >> 20, stream >> 20, reserve >> 20, slots, per_slot / 1048576.0);
+    if (slots < n_used) {
+        LOG_ERR("expert_cache: no room for even %d slots, one token's experts; run without the cache\n", n_used);
+        return 0;
+    }
+    if (!p.stream_prefill) {
+        LOG_WRN("expert_cache: without stream prefill, prompt processing pages the experts in through the mmap, on top of the slots\n");
+    }
+    return slots;
 }
 
 // Two buffers, each big enough for every expert of one layer. MoE layer k lives in buffer k % 2, so

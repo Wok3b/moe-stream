@@ -2,7 +2,7 @@
 # Results 11: run under a cgroup memory budget (no swap), cold page cache for the model each time.
 # Usage: bench/mem-budget.sh [budgets...]   e.g. bench/mem-budget.sh 6G 8G 10G 12G infinity
 # Env: MODEL, PROMPT (rendered with chat-prompt.py), N_PREDICT, SLOTS (space-separated counts),
-#      TAG (prefix for result files, default mem)
+#      TAG (prefix for result files, default mem), MMAP=0 to skip the mmap baseline
 # Needs a user systemd with the memory controller delegated (the Arch default); no root.
 cd "$(dirname "$0")/.." || exit 1
 B=llama.cpp/build/bin/llama-moe-run
@@ -30,7 +30,7 @@ run() { # budget name args...
 }
 
 for b in "$@"; do
-    run $b mmap
+    [ "${MMAP:-1}" = 0 ] || run $b mmap
     for s in $SLOTS; do
         run $b s$s-stream --cache-slots $s --io-threads 4 --stream-prefill
     done

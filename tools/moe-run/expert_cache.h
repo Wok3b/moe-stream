@@ -18,7 +18,8 @@
 struct llama_model;
 
 struct expert_cache_params {
-    int  slots          = 32;    // per layer
+    static constexpr int SLOTS_AUTO = -1;
+    int  slots          = 32;    // per layer; SLOTS_AUTO: as many as the available memory allows
     int  io_threads     = 2;
     int  max_tokens     = 1;     // batches up to this size use the slots; 0 = slots / experts per token
     bool lock_memory    = true;  // VirtualLock/mlock the cache so the OS cannot page it out under pressure
@@ -67,6 +68,7 @@ public:
     bool has_layer(int il) const { return il >= 0 && il < (int) layers.size() && !layers[il].tensors.empty(); }
 
     int max_tokens() const { return p.max_tokens; }
+    int slots() const { return p.slots; }
 
     expert_cache_stats stats;
     size_t bytes_total  = 0; // cache memory
@@ -107,6 +109,7 @@ private:
     };
 
     bool init_bundle(const std::string & bundle_path); // validate the sidecar and take its offsets
+    int  auto_slots(const llama_model * model);         // slots that fit next to the dense weights, 0 if too few
     bool init_stream();                                // allocate the two layer buffers and register the views
     void prefetch_dense(const llama_model * model);    // read the non-expert weights in big requests, not by faults
     void seed_slots(int il, const int32_t * ids, int n, uint64_t token, std::unique_lock<std::mutex> & lk);

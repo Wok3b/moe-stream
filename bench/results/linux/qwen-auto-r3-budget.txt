@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 45.7s
+    prefill 33 tokens in 11.21s (2.9 tok/s), 58356 page faults (225 major)
+    decode 128 tokens in 32.91s (3.89 tok/s), 69 page faults/token (0.1 major)
+    cache: 1822 MiB, split layout, per token: hits 216.3, late hits 0.0, misses 103.7, prefetched 0.0, evictions 103.7, no-slot 0.0; read 198.3 MB/token in 311.0 requests (0.64 MB each), wait 144.4 ms/token, I/O 516 MB/s per thread
+    stream: 996 MiB buffers, 41 layers loaded (1 on demand), 20055 MB read, graph waited 8.44s in total; 1000 experts seeded into the slots in 0.40s
+    tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+8G sauto-stream exit 0 wall 36.7s
+    prefill 33 tokens in 11.04s (3.0 tok/s), 58372 page faults (221 major)
+    decode 128 tokens in 24.07s (5.32 tok/s), 57 page faults/token (0.1 major)
+    cache: 3863 MiB, split layout, per token: hits 267.7, late hits 0.0, misses 52.3, prefetched 0.0, evictions 52.3, no-slot 0.0; read 99.9 MB/token in 156.9 requests (0.64 MB each), wait 79.2 ms/token, I/O 561 MB/s per thread
+    stream: 996 MiB buffers, 41 layers loaded (1 on demand), 20055 MB read, graph waited 7.67s in total; 2120 experts seeded into the slots in 1.03s
+    tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+10G sauto-stream exit 0 wall 32.6s
+    prefill 33 tokens in 11.06s (3.0 tok/s), 59131 page faults (207 major)
+    decode 128 tokens in 19.96s (6.41 tok/s), 47 page faults/token (0.1 major)
+    cache: 5904 MiB, split layout, per token: hits 289.1, late hits 0.0, misses 30.9, prefetched 0.0, evictions 29.4, no-slot 0.0; read 58.8 MB/token in 92.6 requests (0.64 MB each), wait 49.1 ms/token, I/O 589 MB/s per thread
+    stream: 996 MiB buffers, 41 layers loaded (1 on demand), 20055 MB read, graph waited 7.13s in total; 3049 experts seeded into the slots in 1.54s
+    tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+12G sauto-stream exit 0 wall 31.6s
+    prefill 33 tokens in 11.06s (3.0 tok/s), 58578 page faults (205 major)
+    decode 128 tokens in 18.88s (6.78 tok/s), 389 page faults/token (0.1 major)
+    cache: 7289 MiB, split layout, per token: hits 295.3, late hits 0.0, misses 24.7, prefetched 0.0, evictions 18.5, no-slot 0.0; read 47.0 MB/token in 74.0 requests (0.64 MB each), wait 41.0 ms/token, I/O 606 MB/s per thread
+    stream: 996 MiB buffers, 41 layers loaded (1 on demand), 20055 MB read, graph waited 7.14s in total; 3204 experts seeded into the slots in 1.64s
+    tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent
+infinity sauto-stream exit 0 wall 31.5s
+    prefill 33 tokens in 11.07s (3.0 tok/s), 58718 page faults (207 major)
+    decode 128 tokens in 18.80s (6.81 tok/s), 233 page faults/token (0.1 major)
+    cache: 7216 MiB, split layout, per token: hits 295.0, late hits 0.0, misses 25.0, prefetched 0.0, evictions 19.0, no-slot 0.0; read 47.6 MB/token in 74.9 requests (0.64 MB each), wait 41.1 ms/token, I/O 609 MB/s per thread
+    stream: 996 MiB buffers, 41 layers loaded (1 on demand), 20055 MB read, graph waited 7.06s in total; 3199 experts seeded into the slots in 1.65s
+    tokens hash 89be017abcab1043, text: The salt spray had long since bleached Elias’s skin to the color of old parchment, and the rhythm of the waves had become the only clock he trusted. For twent

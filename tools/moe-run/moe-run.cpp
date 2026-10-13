@@ -13,7 +13,8 @@
 //            [--prefetch-threads N] [--touch]
 //            [--cache-slots C] [--io-threads N] [--cache-max-tokens T] [--no-lock] [--stream-prefill]
 //            [--experts-file model.gguf.experts]
-//   --cache-slots > 0 replaces the mmap/page-cache path by an explicit expert cache (expert_cache.h)
+//   --cache-slots > 0 replaces the mmap/page-cache path by an explicit expert cache (expert_cache.h);
+//            auto takes as many slots as fit next to the non-expert weights (cgroup memory.max or free RAM)
 //   --stream-prefill: batches above --cache-max-tokens stream every expert of a layer through two buffers
 //            (load layer L+1 while L computes) instead of paging them in from the mmap
 //   --experts-file reads whole experts from a bundled sidecar (llama-moe-bundle): one request
@@ -577,7 +578,8 @@ int main(int argc, char ** argv) {
         } else if (a == "--touch") {
             touch = true;
         } else if (a == "--cache-slots" && i + 1 < argc) {
-            cp.slots = atoi(argv[++i]);
+            const std::string v = argv[++i];
+            cp.slots = v == "auto" ? expert_cache_params::SLOTS_AUTO : atoi(v.c_str());
         } else if (a == "--io-threads" && i + 1 < argc) {
             cp.io_threads = atoi(argv[++i]);
         } else if (a == "--cache-max-tokens" && i + 1 < argc) {
@@ -610,7 +612,7 @@ int main(int argc, char ** argv) {
     llama_backend_init();
     llama_numa_init(params.numa);
 
-    if (pf.depth > 0 || pf.stats || cp.slots > 0) {
+    if (pf.depth > 0 || pf.stats || cp.slots != 0) {
         params.cb_eval           = cb_eval;
         params.cb_eval_user_data = &pf;
     }
@@ -625,7 +627,7 @@ int main(int argc, char ** argv) {
     }
     pf.init(model);
     expert_cache ec;
-    if (cp.slots > 0) {
+    if (cp.slots != 0) {
         if (!ec.init(model, params.model.path, cp)) {
             return 1;
         }
@@ -749,7 +751,7 @@ int main(int argc, char ** argv) {
                     n_gen ? pf.bytes_prefetched / 1e6 / n_gen : 0.0, hit, n_gen ? pf.predict_ms / n_gen : 0.0,
                     n_gen ? wk_mb / n_gen : 0.0, n_gen ? skp_mb / n_gen : 0.0, stale, n_gen ? wk_ms / n_gen : 0.0,
                     prefetch_threads, touch ? 1 : 0, n_gen ? tch_ms / n_gen : 0.0,
-                    cp.slots, n_gen ? (double) ec.stats.hits.load() / n_gen : 0.0, n_gen ? (double) ec.stats.late_hits.load() / n_gen : 0.0,
+                    pf.ec ? ec.slots() : 0, n_gen ? (double) ec.stats.hits.load() / n_gen : 0.0, n_gen ? (double) ec.stats.late_hits.load() / n_gen : 0.0,
                     n_gen ? (double) ec.stats.misses.load() / n_gen : 0.0, n_gen ? ec.stats.bytes_read.load() / 1e6 / n_gen : 0.0,
                     n_gen ? ec.stats.ns_wait.load() / 1e6 / n_gen : 0.0,
                     ec.stats.ns_io.load() ? ec.stats.bytes_read.load() / (ec.stats.ns_io.load() / 1e9) / 1e6 : 0.0,

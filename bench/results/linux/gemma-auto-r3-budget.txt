@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 33.1s
+    prefill 34 tokens in 5.83s (5.8 tok/s), 41989 page faults (380 major)
+    decode 128 tokens in 25.22s (5.07 tok/s), 6 page faults/token (0.0 major)
+    cache: 1853 MiB, split layout, per token: hits 185.6, late hits 0.0, misses 54.4, prefetched 0.0, evictions 54.4, no-slot 0.0; read 131.0 MB/token in 108.9 requests (1.20 MB each), wait 98.8 ms/token, I/O 550 MB/s per thread
+    stream: 688 MiB buffers, 31 layers loaded (1 on demand), 9520 MB read, graph waited 3.42s in total; 810 experts seeded into the slots in 0.42s
+    tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+8G sauto-stream exit 0 wall 21.7s
+    prefill 34 tokens in 5.72s (5.9 tok/s), 42574 page faults (392 major)
+    decode 128 tokens in 13.97s (9.16 tok/s), 3 page faults/token (0.0 major)
+    cache: 3913 MiB, split layout, per token: hits 228.8, late hits 0.0, misses 11.2, prefetched 0.0, evictions 10.6, no-slot 0.0; read 27.0 MB/token in 22.4 requests (1.20 MB each), wait 22.1 ms/token, I/O 746 MB/s per thread
+    stream: 688 MiB buffers, 31 layers loaded (1 on demand), 9520 MB read, graph waited 2.78s in total; 1632 experts seeded into the slots in 0.93s
+    tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+10G sauto-stream exit 0 wall 20.4s
+    prefill 34 tokens in 5.71s (6.0 tok/s), 41804 page faults (382 major)
+    decode 128 tokens in 12.69s (10.08 tok/s), 10 page faults/token (0.0 major)
+    cache: 5972 MiB, split layout, per token: hits 234.4, late hits 0.0, misses 5.6, prefetched 0.0, evictions 0.5, no-slot 0.0; read 13.5 MB/token in 11.2 requests (1.20 MB each), wait 12.9 ms/token, I/O 780 MB/s per thread
+    stream: 688 MiB buffers, 31 layers loaded (1 on demand), 9520 MB read, graph waited 2.67s in total; 1799 experts seeded into the slots in 1.04s
+    tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+12G sauto-stream exit 0 wall 20.3s
+    prefill 34 tokens in 5.71s (5.9 tok/s), 42048 page faults (383 major)
+    decode 128 tokens in 12.59s (10.17 tok/s), 8 page faults/token (0.0 major)
+    cache: 7208 MiB, split layout, per token: hits 234.5, late hits 0.0, misses 5.5, prefetched 0.0, evictions 0.0, no-slot 0.0; read 13.2 MB/token in 11.0 requests (1.20 MB each), wait 12.6 ms/token, I/O 777 MB/s per thread
+    stream: 688 MiB buffers, 31 layers loaded (1 on demand), 9520 MB read, graph waited 2.67s in total; 1799 experts seeded into the slots in 1.04s
+    tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an
+infinity sauto-stream exit 0 wall 20.4s
+    prefill 34 tokens in 5.70s (6.0 tok/s), 42565 page faults (381 major)
+    decode 128 tokens in 12.68s (10.09 tok/s), 12 page faults/token (0.0 major)
+    cache: 7208 MiB, split layout, per token: hits 234.5, late hits 0.0, misses 5.5, prefetched 0.0, evictions 0.0, no-slot 0.0; read 13.2 MB/token in 11.0 requests (1.20 MB each), wait 12.7 ms/token, I/O 772 MB/s per thread
+    stream: 688 MiB buffers, 31 layers loaded (1 on demand), 9520 MB read, graph waited 2.70s in total; 1799 experts seeded into the slots in 1.04s
+    tokens hash aa7be0807a9ce7a9, text: Elias had lived on the Blackwood Rock for twenty years, a man carved from salt and solitude. His world was measured in the rhythmic sweep of the lantern beam an

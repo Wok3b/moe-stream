@@ -726,22 +726,75 @@ Caveats as in Results 11: one prompt, one run per cell, short output, desktop se
 expert is still three reads (0.64 MB each); the bundled sidecar would make it one, but needs another
 18 GB of disk.
 
+## Results 13 — `--cache-slots auto` (2026-10-13)
+
+Results 11 found the cliff (64 Gemma slots at 6 GB: 0.41 tok/s, against 5.68 for 32) and Results 12 that
+Qwen keeps gaining from every slot that fits. Picking the count by hand needs both facts, so the cache now
+does it: `--cache-slots auto` in `moe-run`, `MOE_CACHE_SLOTS=auto` in `llama-server` (patch 0004).
+
+slots = (available - non-expert weights - stream buffers - 256 MiB) / bytes per slot, capped at
+`n_expert`; fewer than one token's experts (k) refuses to start. *Available* is the smaller of:
+
+- every cgroup v2 level above the process: `memory.max - (memory.current - file)`, so page cache counts
+  as reclaimable and what is already allocated (KV, weights touched at load) as used;
+- `MemAvailable` less 15% of RAM (Windows: `ullAvailPhys`, same margin).
+
+The margin and the reserve came from four rounds against the same runs:
+
+| version | failure |
+|---|---|
+| 512 MiB reserve, no system margin | no limit took 125 Qwen slots: the desktop's page cache was counted as free, 10 major faults/token |
+| 128 MiB, 10% margin | 111 Qwen slots at 12 GB and unlimited faulted where 106 ran clean; at 8-10 GB some runs faulted, some did not |
+| 128 MiB, 15% margin | 100 slots at 12 GB still faulted once: with ~150 MiB of slack, whether the dense weights survive depends on the rest of the system |
+| **256 MiB, 15% margin** | below; 29 of 30 runs clean |
+
+Final version, 3 rounds per cell, cold model file each run, same prompts as Results 11/12, 128 tokens:
+
+| budget | Qwen slots | Qwen tok/s (3 runs) | hand-picked best | Gemma slots | Gemma tok/s (3 runs) | hand-picked best |
+|---|---|---|---|---|---|---|
+| 6 GB | 25 | **3.88** (3.85-3.89) | 3.42 (32) | 27 | 5.13 (5.07-5.14) | **5.68** (32) |
+| 8 GB | 53 | **5.32** (5.30-5.32) | 4.25 (32) | 57 | 9.16 (9.15-9.20) | **9.58** (64) |
+| 10 GB | 81 | **6.41** (6.41-6.41) | 5.79 (64) | 87 | **10.08** (10.03-10.14) | 9.44 (64) |
+| 12 GB | 100 | **6.76** (6.07-6.78) | 6.47 (96) | 105 | **10.08** (10.07-10.17) | 9.56 (64) |
+| none | 99 | **6.81** (6.75-6.83) | 6.77 (96) | 105 | **10.15** (10.09-10.17) | 9.57 (64) |
+
+All 30 runs give the model's hash (Qwen `89be017abcab1043`, Gemma `aa7be0807a9ce7a9`); 29 have <= 0.1
+major faults/token, one Qwen 12 GB run had 10.2 (6.07 tok/s). Runs repeat within 1-2%; the hand-picked
+column is single runs from Results 11/12.
+
+- **Qwen: auto beats every hand-picked count**, by 25% at 8 GB, and is at least as fast unlimited.
+- **Gemma: auto wins from 10 GB up and gives up 4-10% at 6-8 GB.** The 256 MiB reserve costs 4-5 slots,
+  and the hand-picked 32 and 64 happened to sit right at the edge. That is the price of staying off the
+  cliff, where the wrong side cost 23x.
+- **Unlimited is limited by the desktop, not the cgroup.** 12 GB and no limit land on the same ~100 slots
+  because the 15% margin binds first.
+
+Caveats: one machine, one desktop load. The margin is a share of RAM on the guess that the page cache
+the rest of the system needs grows with RAM; that is one 16 GB machine's worth of evidence.
+
 ## Next step options (updated)
 
 - **Bundled sidecar for Gemma 4** (needs ~9 GB of disk): one request per miss instead of two, which
   Results 8 measured at 1.5x on OLMoE. Decode still waits 46 ms/token on misses.
-- **A model that does not fit**: Gemma 4 QAT UD-Q4_K_XL (13.3 GiB) or Qwen3.5-35B-A3B Q4_K_M
-  (20.5 GiB). This is where streaming prefill + slots should beat mmap outright, not just tie it.
 - **Cheaper wrong guesses**: prefetch only into free or cold slots, or into a small separate pool, so a
   mispredicted expert cannot evict a hot one; and run the routing math off the graph thread.
 - **Server counters**: cache and stream stats per request in the server log.
+- **Prefetch on Qwen**: Gemma's 66-70% prediction hit rate lost (Results 10), but Qwen waits 42-124
+  ms/token on misses (Results 12), so a correct guess is worth more there. One flag to measure.
+- **Eviction policy**: LRU today. Replay recorded routing traces (`moe-trace`) against LRU, LFU and
+  frequency-weighted LRU offline before changing the cache; each miss avoided is ~1.6 ms on Qwen.
+- **More reads in flight**: a miss is three sequential reads on one thread (one per expert tensor).
+  Split them into three jobs now; io_uring later, so one thread holds the QD 4-8 the drive wants.
+- **Hybrid prefill**: for short prompts, read only the experts the batch picked that are not already in
+  the slots, instead of streaming all of them; Qwen's prefill reads 20 GB per prompt and waits on I/O
+  for 64% of it (Results 12).
+- **Compiler**: clang vs GCC on Linux, clang-cl vs MSVC on Windows; may explain the Windows/Linux gap
+  (Results 11) and is free if it holds.
+- **Shared expert during the miss wait**: Qwen's shared expert does not depend on routing; computing it
+  while misses load hides I/O. Needs a graph change in llama.cpp, so last.
 - **K=4 + quant sweep** (cheap, no code): `--override-kv` for K, IQ4_XS/Q3_K_M
   quants of OLMoE (4 and 3 GB downloads), `llama-perplexity` for quality,
   `moe-run --cache-slots` for speed. Establishes the bytes/quality frontier.
-- **Real target**: Qwen3.6-35B-A3B (22 GB) with the explicit cache. Needs the
-  disk space and ~12 min download; the cache code is model-agnostic
-  (`ffn_*_exps` + `ffn_gate_inp`), Qwen3.6's linear-attention layers are
-  handled by llama.cpp.
 - **Runtime**: the Rust port now has a validated reference: slot cache +
   prediction + urgent-miss queue + unbuffered reads + bundled layout (Results 8).
   What is left to add is real asynchronous I/O (IOCP / io_uring) so one thread
@@ -779,3 +832,5 @@ expert is still three reads (0.64 MB each); the bundled sidecar would make it on
   2x mmap's decode at 8 GB, 2.9x at 6 GB with 32 slots. Raw numbers in `bench/results/linux/`.
 - 2026-10-13 (later) — Qwen3.6-35B-A3B UD-Q4_K_M (20.6 GiB) downloaded; prefetcher init fixed for
   `qwen35moe`. Bit-exact; 1.9-4.2x mmap's decode from unlimited down to 6 GB (Results 12).
+- 2026-10-13 (later) — `--cache-slots auto` / `MOE_CACHE_SLOTS=auto`: sizes from cgroup memory.max or
+  MemAvailable less 15%; tuned over four rounds, final version 3 runs per cell (Results 13).

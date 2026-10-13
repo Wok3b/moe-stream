@@ -166,18 +166,26 @@ python bench\chat-prompt.py C:\models\<model>.gguf "Write a 400-word story about
 You should see a `stream:` line with layers loaded and how long the graph
 waited for them. The `tokens hash` must match the run without `--cache-slots`.
 
+`--cache-slots auto` sizes the cache from the memory the process can get: the
+cgroup's `memory.max` if one is set (Linux), else free RAM less 15%, minus the
+non-expert weights, the stream buffers and a 256 MiB reserve. It logs the
+arithmetic as `expert_cache: auto: ...` and refuses to start if not even one
+token's experts fit. Prefer it to a fixed count: too many slots for the memory
+makes the non-expert weights fault, which can be slower than no cache at all
+(`docs/NOTES.md`, Results 11 and 13).
+
 `llama-server` reads its cache settings from the environment:
 
 | variable | default | |
 |---|---|---|
-| `MOE_CACHE_SLOTS` | 0 (off) | slots per layer |
+| `MOE_CACHE_SLOTS` | 0 (off) | slots per layer, or `auto` |
 | `MOE_IO_THREADS` | 2 | |
 | `MOE_CACHE_MAX_TOKENS` | slots / experts per token | batches up to this size use the slots |
 | `MOE_STREAM_PREFILL` | 1 | larger batches stream layers; 0 = they use the mmap |
 | `MOE_EXPERTS_FILE` | - | bundled sidecar for slot misses |
 
 ```powershell
-$env:MOE_CACHE_SLOTS = 64; $env:MOE_IO_THREADS = 4
+$env:MOE_CACHE_SLOTS = "auto"; $env:MOE_IO_THREADS = 4
 .\llama.cpp\build\bin\Release\llama-server.exe -m C:\models\gemma-4-26B-A4B-it-UD-IQ3_S.gguf -t 6 -c 16384 -lzm on
 ```
 
