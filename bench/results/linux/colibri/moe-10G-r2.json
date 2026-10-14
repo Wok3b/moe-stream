@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "config": {
+    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+    "model": "qwen36",
+    "workload_sha256": "2c6c4f36915f83a0f5028c1ece4d839d96a9df444bf394b39cc0015d7962442c",
+    "workload_rows": 4,
+    "concurrency": 1,
+    "load_model": "closed_loop",
+    "arrival_distribution": null,
+    "arrival_seed": null,
+    "request_rate": null,
+    "warmup_requests": 0,
+    "repeats": 1,
+    "max_tokens": 128,
+    "temperature": 0.0,
+    "socket_timeout_seconds": 900.0,
+    "slo_first_output_seconds": null,
+    "slo_duration_seconds": null,
+    "stream": true,
+    "include_usage": true,
+    "n": 1
+  },
+  "status": "measured",
+  "warmup": null,
+  "summary": {
+    "requests": 4,
+    "succeeded": 4,
+    "failed": 0,
+    "failure_rate": 0.0,
+    "wall_seconds": 118.76344945900019,
+    "successful_requests_per_second": 0.033680395931754155,
+    "successful_requests_with_usage": 4,
+    "reported_successful_completion_tokens": 512,
+    "successful_completion_tokens_per_second": 4.311090679264532,
+    "successful_duration_seconds": {
+      "count": 4,
+      "mean": 29.69053304575027,
+      "p50": 23.71711841999968,
+      "p95": 44.668866299,
+      "p99": 44.668866299
+    },
+    "successful_first_output_seconds": {
+      "count": 4,
+      "mean": 11.048504345750644,
+      "p50": 4.854354473000058,
+      "p95": 25.719234075000713,
+      "p99": 25.719234075000713
+    },
+    "arrival_timing": null,
+    "latency_slo": null
+  },
+  "requests": [
+    {
+      "index": 0,
+      "start_seconds": 0.0009568269997544121,
+      "success": true,
+      "http_status": 200,
+      "error": null,
+      "first_output_seconds": 4.750091171001259,
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "duration_seconds": 21.394299555000543
+    },
+    {
+      "index": 1,
+      "start_seconds": 21.395297660001233,
+      "success": true,
+      "http_status": 200,
+      "error": null,
+      "first_output_seconds": 4.854354473000058,
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "duration_seconds": 23.71711841999968
+    },
+    {
+      "index": 2,
+      "start_seconds": 45.11245406099988,
+      "success": true,
+      "http_status": 200,
+      "error": null,
+      "first_output_seconds": 8.870337664000544,
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "duration_seconds": 28.981847909000862
+    },
+    {
+      "index": 3,
+      "start_seconds": 74.0943320360002,
+      "success": true,
+      "http_status": 200,
+      "error": null,
+      "first_output_seconds": 25.719234075000713,
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "duration_seconds": 44.668866299
+    }
+  ]
+}

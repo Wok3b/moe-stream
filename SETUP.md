@@ -170,6 +170,7 @@ makes the non-expert weights fault, which can be slower than no cache at all
 | `MOE_PREFETCH_DEPTH` | 1 | layers ahead the stale router prefetches; 0 = off |
 | `MOE_PREFETCH_WIDTH` | experts per token | experts prefetched per layer |
 | `MOE_CACHE_LFU` | 8 | eviction: fewest uses, decayed by half every N tokens; 0 = LRU |
+| `MOE_WARMUP` | 0 | 1 = keep llama.cpp's warm-up decode, which runs before the cache exists and adds ~13 s to a cold start |
 
 ```powershell
 $env:MOE_CACHE_SLOTS = "auto"; $env:MOE_IO_THREADS = 4

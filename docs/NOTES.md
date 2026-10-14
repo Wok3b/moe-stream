@@ -33,6 +33,11 @@ heuristics, standard quants) and use them when available.
   flash-resident weights.
 - **Pre-gated MoE** (2023), **MoE-Infinity**, **Fiddler**, **ExpertFlow**,
   **HOBBIT** — expert prefetch / caching / offload papers.
+- **Colibri** (2026) — pure-C engine: dense weights in RAM, routed experts
+  streamed from disk through a per-layer cache, its own int4 containers,
+  optional Vulkan and CUDA tiers. It predates moe-stream but was not an
+  inspiration for it: I only came across it in October 2026, after the design
+  here was in place. Compared in Results 18.
 
 ## Thesis
 
@@ -899,6 +904,78 @@ Batches above 512 tokens are not predicted (routing them would fall behind the g
 default -ub 512 that never happens. Caveats: one machine; the predictor's routing of a 279-token batch
 costs ~10 ms per layer of one core.
 
+## Results 18 — moe-stream vs Colibri on Qwen3.6-35B-A3B (2026-10-14)
+
+[Colibri](https://github.com/JustVugg/colibri) (2.0.0, `bf24429`) is a pure-C engine that also keeps the
+dense weights in RAM and streams the routed experts from disk through a per-layer cache. Same laptop, same
+model, each in the 4-bit format its project recommends: GGUF UD-Q4_K_M (22.1 GB) here, Colibri's int4 gs64
+container (`Kreuzzelg/qwen36-35b-a3b-colibri-i4-gs64`, 23.0 GB, int8 dense trunk). Both on the CPU, 6 threads.
+
+Method (scripts, per-request reports and a summary line per round in `bench/results/linux/colibri/`): Colibri's own
+`c/tools/benchmark_http_serving.py` against each engine's OpenAI endpoint, `llama-server -c 16384 -np 1
+-lzm on -rea off` with `MOE_CACHE_SLOTS=auto`, and `coli serve --ctx 16384 --no-think --temp 0`. Four
+requests per round (story 33 tokens, code 48, notes 279, licence text 942), 128 greedy tokens each,
+concurrency 1. Every round evicts the model files, starts the server under `MemoryMax` with swap off and
+stops it after. Two rounds per budget, the engine that goes first alternating.
+
+Colibri's cache size: `coli serve` without `--cap` gives this engine 8 slots per layer (2.1 tok/s and
+6.5 min to first output on the long prompt), and its auto sizing reads MemAvailable, not the cgroup limit.
+So each budget gets the cap Colibri's own rule (88% of what is left after its 4.8 GB of resident weights)
+gives for that limit: 20 / 50 / 80 / 109 slots, and the engine's own auto (143) with no limit. `PILOT=1`
+(router lookahead prefetch) was 7% slower at 8 GB, so it stays off; `DIRECT` and `URING` are for its GLM
+engine only.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark/fig11-colibri.png">
+  <img alt="Decode and time to first output under 6 to 12 GB and no limit: moe-stream 4.4 to 7.5 tok/s against Colibri 2.6 to 7.2, and about 25 s against 56 to 287 s on a 942-token prompt" src="img/fig11-colibri.png">
+</picture>
+
+| budget | decode tok/s, moe-stream | Colibri | first output, 942 tokens | all four requests |
+|---|---|---|---|---|
+| 6 GB | **4.1-5.0** | 2.4-3.0 | **24.6 s** / 286.8 s | **159 s** / 591 s |
+| 8 GB | **5.3-6.7** | 3.4-4.4 | **24.8** / 198.9 | **132** / 412 |
+| 10 GB | **6.4-7.5** | 4.6-6.1 | **25.8** / 128.2 | **119** / 281 |
+| 12 GB | **6.7-7.8** | 5.6-6.8 | **25.3** / 84.9 | **114** / 209 |
+| no limit | **7.0-8.2** | 7.1-7.3 | **25.3** / 56.3 | **111** / 159 |
+
+Ranges are over the four requests, each the median of the two rounds; rounds differ by at most 0.46 tok/s.
+
+- **Decode**: 1.7x at 6 GB, a tie with no limit. There Colibri holds 143 experts per layer to moe-stream's
+  100-105 (its int4 experts are ~17% smaller), at a peak of 13.9 against 13.1 GiB.
+- **Prompts**: moe-stream's first output on the long prompt is ~25 s at every budget, as prefill reads the
+  picked experts in bulk (Results 17); Colibri's depends on its cache, from 287 s at 6 GB to 56 s.
+- **Start-up**: Colibri was ready in 7 s, moe-stream in 16 s. That led to Results 19.
+- **Quality** is not measured here. Colibri's own numbers (its `docs/qwen36.md`, wikitext-2) put the gs64
+  container at 7.325 perplexity against 7.147 for Ollama's Q4_K_M GGUF.
+
+Vulkan: Colibri built with `VK=1` and run with `COLI_VULKAN=1` on the Radeon iGPU (RADV RENOIR), cap 64, the
+expert history its setup ships, no limit, 2 runs; the CPU at cap 64 is the control.
+
+| | decode tok/s | first output, 279 / 942 tokens |
+|---|---|---|
+| Colibri CPU, cap 64 | 4.5-5.8 | 37 / 145 s |
+| Colibri Vulkan, cap 64 | 2.9-3.8 | 24 / 30 s |
+
+On this iGPU the device makes the long prompt 5x faster (the 279-token one 1.5x) and decode a third slower, and still trails moe-stream on
+the CPU. Memory the GPU driver maps may not be charged to the cgroup, so there are no budget runs.
+
+Caveats: one machine, two rounds; different weight formats, so this compares deployments, not kernels on
+identical bytes; concurrency 1 only.
+
+## Results 19 — ready in 3 s: no warm-up with the cache (2026-10-14)
+
+llama-server's warm-up decode runs in `common_init_from_params`, before the expert cache exists, so its
+experts come through the lazy mmap, which llama.cpp advises `POSIX_MADV_RANDOM`: no readahead, one page
+per fault. On Qwen 3.6 that was 13 of the 16 s from start to `/health`. With the cache on, the server now
+skips it; `MOE_WARMUP=1` keeps it. Cold page cache, no limit, then one 32-token request (`startup/`):
+
+| | ready | first request | decode |
+|---|---|---|---|
+| with warm-up (5 runs) | 15.9-16.2 s | 8.6-8.9 s | 6.7-7.1 tok/s |
+| without (5 runs) | **3.1-3.2 s** | 8.5-8.8 s | 6.8-7.3 tok/s |
+
+The first request does not pay it back, and the answer is the same with and without.
+
 ## Next step options (updated)
 
 - **Bundled sidecar for Gemma 4** (needs ~9 GB of disk): one request per miss instead of two, which
@@ -961,3 +1038,6 @@ costs ~10 ms per layer of one core.
   default, +1-6% decode (Results 15). clang vs GCC: no difference (Results 16).
 - 2026-10-13 (later) — prefill reads the predicted and picked experts instead of whole layers: 1.2-2.3x
   faster prompts, bit-exact (Results 17).
+- 2026-10-14 — Colibri 2.0.0 against moe-stream on Qwen 3.6 under the same budgets, through Colibri's HTTP
+  benchmark, plus its Vulkan path on the iGPU (Results 18). Warm-up skipped with the cache: ready in 3 s
+  instead of 16 (Results 19).

@@ -189,7 +189,8 @@ including what did not work: the page-cache baseline and the failed prefetch
 spike (Results 1-5), the explicit cache and bundled layout (6-8), Gemma 4 and
 `llama-server` (9-10), the Linux port under cgroup budgets (11), a model twice
 the size of RAM (12), auto sizing (13), prefetch that pays (14), LFU eviction
-(15), clang vs GCC, no difference (16), and prompt-aware prefill (17).
+(15), clang vs GCC, no difference (16), prompt-aware prefill (17), a
+head-to-head with Colibri (18), and a 3 s start-up (19).
 
 Next, in the order it matters:
 
@@ -209,6 +210,13 @@ Apple Silicon with MLX. The ideas it builds on are credited in
 [docs/NOTES.md](docs/NOTES.md): Pre-gated MoE, LLM in a flash, PowerInfer-2,
 MoE-Infinity, Fiddler, ExpertFlow, HOBBIT, and llama.cpp itself, which is the
 baseline every number here is measured against.
+
+[Colibri](https://github.com/JustVugg/colibri) works the same way in its own
+pure-C engine and weight format: dense weights in RAM, routed experts streamed
+from disk through a per-layer cache, with optional Vulkan and CUDA tiers. It
+predates moe-stream, but it was not an inspiration for it: I only came across
+it in October 2026, after the design here was in place. A head-to-head on this
+laptop is Results 18 in [docs/NOTES.md](docs/NOTES.md).
 
 ## License
 

@@ -622,6 +622,70 @@ def fig_prefill(res, out):
     return save(fig, out, "fig10-prefill.png")
 
 
+def colibri_runs(res):
+    """Results 18: per engine and budget, the mean decode tok/s over the four requests and the time to first
+    output on the long prompt, one value per round, from the HTTP benchmark reports."""
+    budgets = ("6G", "8G", "10G", "12G", "infinity")
+    rows = {}
+    for eng in ("moe", "coli"):
+        for b in budgets:
+            for path in sorted(glob.glob(os.path.join(res, "linux", "colibri", "%s-%s-r[12].json" % (eng, b)))):
+                with open(path, encoding="utf-8") as f:
+                    reqs = json.load(f)["requests"]
+                if not all(r["success"] for r in reqs):
+                    continue
+                dec = [(r["completion_tokens"] - 1) / (r["duration_seconds"] - r["first_output_seconds"]) for r in reqs]
+                rows.setdefault((eng, b), []).append((sum(dec) / len(dec), reqs[-1]["first_output_seconds"]))
+    if len(rows) != 2 * len(budgets):
+        return None
+    return budgets, rows
+
+
+def fig_colibri(res, out):
+    """Results 18: moe-stream against Colibri on Qwen3.6-35B-A3B, both on the CPU, under the same budgets."""
+    got = colibri_runs(res)
+    if got is None:
+        return None
+    budgets, rows = got
+    labels = ["6 GB", "8 GB", "10 GB", "12 GB", "no limit"]
+    series = (("moe", S1, "moe-stream, GGUF UD-Q4_K_M"), ("coli", S2, "Colibri 2.0.0, int4 gs64 container"))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11.4, 3.9))
+    w = 0.36
+    for k, (ax, title, ylab, fmt) in enumerate(((a1, "Decode, mean of the four requests (higher is better)", "decode tok/s", "{:.1f}"),
+                                               (a2, "First output on a 942-token prompt (lower is better)", "seconds", "{:.0f}"))):
+        top = max(max(v[k] for v in runs) for runs in rows.values())
+        for i, b in enumerate(budgets):
+            means = []
+            for j, (eng, color, _) in enumerate(series):
+                vals = [v[k] for v in rows[(eng, b)]]
+                mean = sum(vals) / len(vals)
+                means.append(mean)
+                pos = i + (j - 0.5) * (w + 0.03)
+                ax.bar([pos], [mean], width=w, color=color, linewidth=0)
+                ax.annotate(fmt.format(mean), (pos, max(vals)), textcoords="offset points", xytext=(0, 6),
+                            ha="center", fontsize=8, color=INK2)
+                ax.plot([pos + (n - 0.5) * 0.1 for n in range(len(vals))], vals, "o", color=SURFACE, markersize=4,
+                        markeredgewidth=1.1, markeredgecolor=INK2, zorder=3)
+            ratio = means[0] / means[1] if k == 0 else means[1] / means[0]
+            ax.annotate("%.1fx" % ratio, (i, max(means) + top * 0.16), ha="center", fontsize=9.5, color=INK,
+                        fontweight="bold")
+        ax.set_xticks(range(len(budgets)))
+        ax.set_xticklabels(labels)
+        ax.set_ylabel(ylab)
+        ax.set_title(title)
+        ax.set_ylim(0, top * 1.32)
+        grid_y(ax)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for _, c, _ in series]
+    fig.legend(handles, [n for _, _, n in series], loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.06),
+               frameon=False, fontsize=8.5)
+    fig.text(0.5, -0.12, "Qwen3.6-35B-A3B, Ryzen 5 7430U, CPU only. MemoryMax=X with swap off, model files evicted before "
+                         "every round, Colibri's HTTP benchmark, 128 greedy tokens per request, thinking off.\n"
+                         "Bars the mean of 2 interleaved rounds, dots the rounds. The multiplier is how much faster "
+                         "moe-stream is at that budget.",
+             ha="center", fontsize=7.5, color=INK2)
+    return save(fig, out, "fig11-colibri.png")
+
+
 def main():
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ap = argparse.ArgumentParser()
@@ -637,7 +701,7 @@ def main():
         style(theme)
         for f in (fig_headline, fig_threads, fig_pressure, fig_disk, fig_router,
                   fig_popularity, fig_ab, fig_ppl, fig_layout,
-                  fig_budgets, fig_prefill):
+                  fig_budgets, fig_prefill, fig_colibri):
             if f(a.results, out) is None:
                 print("skipped", f.__name__, "- input not present")
 

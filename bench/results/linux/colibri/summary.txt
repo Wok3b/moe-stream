@@ -1,0 +1,27 @@
+moe-infinity-r0-smoke: ready 36s peak 11.23 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.6s n 128 dec 3.13 | ttft 18.7s n 128 dec 3.96 | ttft 8.6s n 128 dec 4.94 | ttft 53.3s n 128 dec 6.84
+coli-infinity-r0-smoke: ready 6s peak 0.00 GiB bench exit 0 | ttft 14.2s n 128 dec 2.22 | ttft 18.3s n 128 dec 2.10 | ttft 105.0s n 128 dec 2.04 | ttft 388.5s n 128 dec 2.06
+coli-8G-r0-cap50: ready 7s peak 8.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 9.2s n 128 dec 4.27 | ttft 11.9s n 128 dec 3.49 | ttft 57.6s n 128 dec 3.30 | ttft 207.0s n 128 dec 3.70
+coli-8G-r0-cap50-pilot: ready 7s peak 8.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 9.0s n 128 dec 3.98 | ttft 11.6s n 128 dec 3.14 | ttft 56.5s n 128 dec 3.10 | ttft 204.2s n 128 dec 3.46
+moe-6G-r1: avail 13.6 GiB ready 16s peak 6.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 5.0s n 128 dec 5.00 | ttft 5.1s n 128 dec 4.33 | ttft 8.8s n 128 dec 4.07 | ttft 24.0s n 128 dec 4.32
+coli-6G-r1: avail 13.6 GiB ready 8s peak 6.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 10.9s n 128 dec 2.97 | ttft 14.8s n 128 dec 2.44 | ttft 78.8s n 128 dec 2.43 | ttft 286.5s n 128 dec 2.50
+moe-8G-r1: avail 13.6 GiB ready 16s peak 8.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.8s n 128 dec 6.57 | ttft 4.9s n 128 dec 5.63 | ttft 8.8s n 128 dec 5.29 | ttft 24.3s n 128 dec 5.54
+coli-8G-r1: avail 13.6 GiB ready 7s peak 8.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 9.2s n 128 dec 4.37 | ttft 11.7s n 128 dec 3.42 | ttft 56.5s n 128 dec 3.36 | ttft 209.1s n 128 dec 3.36
+moe-10G-r1: avail 13.6 GiB ready 16s peak 10.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.8s n 128 dec 7.45 | ttft 4.9s n 128 dec 6.80 | ttft 8.8s n 128 dec 6.40 | ttft 25.9s n 128 dec 6.64
+coli-10G-r1: avail 13.4 GiB ready 7s peak 10.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.8s n 128 dec 6.11 | ttft 8.7s n 128 dec 4.89 | ttft 36.2s n 128 dec 4.57 | ttft 131.5s n 128 dec 4.87
+moe-12G-r1: avail 13.4 GiB ready 16s peak 12.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.5s n 128 dec 8.01 | ttft 4.8s n 128 dec 7.18 | ttft 8.8s n 128 dec 6.82 | ttft 25.3s n 128 dec 7.22
+coli-12G-r1: avail 13.5 GiB ready 7s peak 12.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.6s n 128 dec 6.80 | ttft 7.1s n 128 dec 5.91 | ttft 25.3s n 128 dec 5.61 | ttft 84.8s n 128 dec 6.02
+moe-infinity-r1: avail 13.6 GiB ready 16s peak 12.66 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.4s n 128 dec 8.02 | ttft 4.8s n 128 dec 7.21 | ttft 8.6s n 128 dec 6.82 | ttft 24.8s n 128 dec 7.23
+coli-infinity-r1: avail 13.6 GiB ready 7s peak 13.89 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.6s n 128 dec 7.27 | ttft 4.9s n 128 dec 7.13 | ttft 18.8s n 128 dec 7.21 | ttft 56.6s n 128 dec 7.27
+coli-6G-r2: avail 13.9 GiB ready 8s peak 6.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 10.9s n 128 dec 2.97 | ttft 14.8s n 128 dec 2.43 | ttft 80.1s n 128 dec 2.39 | ttft 287.1s n 128 dec 2.47
+moe-6G-r2: avail 13.8 GiB ready 16s peak 6.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 5.0s n 128 dec 5.05 | ttft 5.2s n 128 dec 4.36 | ttft 9.0s n 128 dec 4.09 | ttft 25.2s n 128 dec 4.33
+coli-8G-r2: avail 13.8 GiB ready 7s peak 8.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 9.1s n 128 dec 4.49 | ttft 10.6s n 128 dec 3.53 | ttft 51.8s n 128 dec 3.48 | ttft 188.6s n 128 dec 3.71
+moe-8G-r2: avail 13.8 GiB ready 16s peak 8.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.7s n 128 dec 6.73 | ttft 4.9s n 128 dec 5.72 | ttft 8.9s n 128 dec 5.29 | ttft 25.3s n 128 dec 5.58
+coli-10G-r2: avail 13.8 GiB ready 7s peak 10.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.7s n 128 dec 6.09 | ttft 8.6s n 128 dec 4.92 | ttft 33.4s n 128 dec 4.56 | ttft 124.8s n 128 dec 4.94
+moe-10G-r2: avail 13.8 GiB ready 16s peak 10.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.8s n 128 dec 7.63 | ttft 4.9s n 128 dec 6.73 | ttft 8.9s n 128 dec 6.31 | ttft 25.7s n 128 dec 6.70
+coli-12G-r2: avail 13.8 GiB ready 7s peak 12.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.6s n 128 dec 6.74 | ttft 7.1s n 128 dec 5.94 | ttft 25.0s n 128 dec 5.65 | ttft 85.0s n 128 dec 6.13
+moe-12G-r2: avail 13.9 GiB ready 16s peak 12.00 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.5s n 128 dec 7.66 | ttft 4.8s n 128 dec 7.04 | ttft 8.7s n 128 dec 6.61 | ttft 25.2s n 128 dec 6.77
+coli-infinity-r2: avail 13.9 GiB ready 7s peak 13.95 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.7s n 128 dec 7.23 | ttft 4.8s n 128 dec 7.01 | ttft 18.7s n 128 dec 7.05 | ttft 56.0s n 128 dec 7.32
+moe-infinity-r2: avail 13.9 GiB ready 16s peak 13.56 GiB bench exit 0 oom 0 oom_kill 0 | ttft 4.5s n 128 dec 8.32 | ttft 4.6s n 128 dec 7.51 | ttft 8.7s n 128 dec 7.20 | ttft 25.7s n 128 dec 7.63
+coli-infinity-r1-cap64: avail 13.8 GiB ready 7s peak 11.75 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.8s n 128 dec 5.83 | ttft 8.3s n 128 dec 4.81 | ttft 37.0s n 128 dec 4.46 | ttft 145.2s n 128 dec 4.92
+coli-infinity-r1-cap64-vk: avail 13.9 GiB ready 9s peak 9.05 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.2s n 128 dec 3.75 | ttft 8.6s n 128 dec 3.25 | ttft 23.6s n 128 dec 2.94 | ttft 29.9s n 128 dec 2.97
+coli-infinity-r2-cap64-vk: avail 13.9 GiB ready 8s peak 8.97 GiB bench exit 0 oom 0 oom_kill 0 | ttft 8.2s n 128 dec 3.75 | ttft 8.6s n 128 dec 3.10 | ttft 24.0s n 128 dec 2.88 | ttft 29.9s n 128 dec 2.96
