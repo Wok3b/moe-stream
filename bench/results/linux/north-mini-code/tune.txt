@@ -1,0 +1,5 @@
+tune-infinity-story-depth2 exit 0 | decode 128 tokens in 13.69s (9.35 tok/s), 0 | 16fc1a72beedc5dc | hits 373.4, late hits 10.6, misses 0.0, prefetched 18.1 ... wait 16.3 ms/token
+tune-infinity-code-depth2 exit 0 | decode 128 tokens in 14.28s (8.96 tok/s), 0 | d72d72cda6e1cff9 | hits 372.0, late hits 12.0, misses 0.0, prefetched 21.4 ... wait 19.0 ms/token
+tune-8G-story-depth2 exit 0 | decode 128 tokens in 18.85s (6.79 tok/s), 0 | 16fc1a72beedc5dc | hits 355.9, late hits 28.1, misses 0.0, prefetched 48.7 ... wait 45.4 ms/token
+tune-8G-code-depth2 exit 0 | decode 128 tokens in 19.56s (6.54 tok/s), 0 | d72d72cda6e1cff9 | hits 353.0, late hits 31.0, misses 0.0, prefetched 54.6 ... wait 49.1 ms/token
+tune-8G-code-depth3 exit 0 | decode 128 tokens in 20.74s (6.17 tok/s), 0 | d72d72cda6e1cff9 | hits 362.6, late hits 21.4, misses 0.0, prefetched 68.5 ... wait 52.2 ms/token

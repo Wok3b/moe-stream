@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 56.8s
+    prefill 43 tokens in 8.29s (5.2 tok/s), 28342 page faults (2787 major)
+    decode 128 tokens in 47.64s (2.69 tok/s), 3 page faults/token (0.3 major)
+    cache: 1912 MiB, split layout, per token: hits 115.0, late hits 54.2, misses 38.9, prefetched 112.1, evictions 150.9, no-slot 0.0; read 650.6 MB/token in 453.2 requests (1.44 MB each), wait 240.0 ms/token, I/O 458 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 4 partly; experts 2842 predicted, 398 read late, 0 from slots; 13938 MB read, graph waited 2.20s in total; 450 experts seeded into the slots in 0.46s
+    tokens hash e56455faf0fc2614, text: ```python import pandas as pd import numpy as np  def summarize_csv(path: str,                   na_values: list[str] | None = None,                   keep: str
+8G sauto-stream exit 0 wall 46.0s
+    prefill 43 tokens in 8.32s (5.2 tok/s), 29559 page faults (2759 major)
+    decode 128 tokens in 36.86s (3.47 tok/s), 4 page faults/token (0.3 major)
+    cache: 3931 MiB, split layout, per token: hits 145.5, late hits 35.1, misses 27.5, prefetched 83.4, evictions 110.6, no-slot 0.0; read 478.0 MB/token in 332.6 requests (1.44 MB each), wait 162.1 ms/token, I/O 455 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 10 partly; experts 2842 predicted, 398 read late, 0 from slots; 13938 MB read, graph waited 1.81s in total; 925 experts seeded into the slots in 0.96s
+    tokens hash e56455faf0fc2614, text: ```python import pandas as pd import numpy as np  def summarize_csv(path: str,                   na_values: list[str] | None = None,                   keep: str
+10G sauto-stream exit 0 wall 40.4s
+    prefill 43 tokens in 8.32s (5.2 tok/s), 30318 page faults (2761 major)
+    decode 128 tokens in 31.30s (4.09 tok/s), 4 page faults/token (0.3 major)
+    cache: 5950 MiB, split layout, per token: hits 160.4, late hits 25.8, misses 21.9, prefetched 66.7, evictions 88.1, no-slot 0.0; read 382.1 MB/token in 265.6 requests (1.44 MB each), wait 124.3 ms/token, I/O 452 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 12 partly; experts 2842 predicted, 398 read late, 0 from slots; 13938 MB read, graph waited 1.50s in total; 1400 experts seeded into the slots in 1.46s
+    tokens hash e56455faf0fc2614, text: ```python import pandas as pd import numpy as np  def summarize_csv(path: str,                   na_values: list[str] | None = None,                   keep: str
+12G sauto-stream exit 0 wall 37.0s
+    prefill 43 tokens in 8.37s (5.1 tok/s), 31831 page faults (2758 major)
+    decode 128 tokens in 27.83s (4.60 tok/s), 2 page faults/token (0.3 major)
+    cache: 7438 MiB, split layout, per token: hits 168.8, late hits 20.8, misses 18.4, prefetched 56.3, evictions 74.1, no-slot 0.0; read 322.4 MB/token in 224.0 requests (1.44 MB each), wait 102.0 ms/token, I/O 449 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 15 partly; experts 2842 predicted, 398 read late, 0 from slots; 13938 MB read, graph waited 1.31s in total; 1750 experts seeded into the slots in 1.81s
+    tokens hash e56455faf0fc2614, text: ```python import pandas as pd import numpy as np  def summarize_csv(path: str,                   na_values: list[str] | None = None,                   keep: str
+infinity sauto-stream exit 0 wall 37.2s
+    prefill 43 tokens in 8.37s (5.1 tok/s), 30926 page faults (2916 major)
+    decode 128 tokens in 27.96s (4.58 tok/s), 8 page faults/token (0.3 major)
+    cache: 7544 MiB, split layout, per token: hits 169.4, late hits 20.5, misses 18.2, prefetched 55.7, evictions 73.3, no-slot 0.0; read 318.9 MB/token in 221.6 requests (1.44 MB each), wait 101.7 ms/token, I/O 444 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 15 partly; experts 2842 predicted, 398 read late, 0 from slots; 13938 MB read, graph waited 1.31s in total; 1775 experts seeded into the slots in 1.82s
+    tokens hash e56455faf0fc2614, text: ```python import pandas as pd import numpy as np  def summarize_csv(path: str,                   na_values: list[str] | None = None,                   keep: str

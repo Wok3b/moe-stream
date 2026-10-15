@@ -1,0 +1,6 @@
+infinity sauto-stream exit 0 wall 26.2s
+    prefill 28 tokens in 5.50s (5.1 tok/s), 23566 page faults (2087 major)
+    decode 128 tokens in 19.51s (6.56 tok/s), 2 page faults/token (0.4 major)
+    cache: 7439 MiB, split layout, per token: hits 441.3, late hits 23.6, misses 15.2, prefetched 50.7, evictions 62.8, no-slot 0.0; read 118.8 MB/token in 197.5 requests (0.60 MB each), wait 37.9 ms/token, I/O 395 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 6 partly; experts 4248 predicted, 528 read late, 0 from slots; 8549 MB read, graph waited 1.67s in total; 3987 experts seeded into the slots in 1.74s
+    tokens hash 0920ea28274b837b, text:     The salt-stained walls of the Sentinel Rock Lighthouse groaned under the weight of the November gale. Elias Thorne, seventy-three and weathered like the gra

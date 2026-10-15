@@ -1,0 +1,4 @@
+ctx 16384 exit 0 | 7336 MiB available (cgroup memory.max) - 1548 dense - 747 stream - 256 reserve = 36 slots of 130.9 MiB
+ctx 65536 exit 0 | 6086 MiB available (cgroup memory.max) - 1548 dense - 747 stream - 256 reserve = 27 slots of 130.9 MiB
+ctx 131072 exit 0 | 4442 MiB available (cgroup memory.max) - 1548 dense - 747 stream - 256 reserve = 14 slots of 130.9 MiB
+ctx 262144 exit 1 | 1073 MiB available (cgroup memory.max) - 1548 dense - 747 stream - 256 reserve = 0 slots of 130.9 MiB

@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 53.2s
+    prefill 25 tokens in 6.80s (3.7 tok/s), 28275 page faults (2865 major)
+    decode 128 tokens in 45.59s (2.81 tok/s), 4 page faults/token (0.5 major)
+    cache: 1912 MiB, split layout, per token: hits 116.7, late hits 59.7, misses 31.6, prefetched 112.1, evictions 143.6, no-slot 0.0; read 619.0 MB/token in 431.3 requests (1.44 MB each), wait 225.8 ms/token, I/O 456 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 7 partly; experts 2228 predicted, 369 read late, 0 from slots; 11158 MB read, graph waited 1.40s in total; 450 experts seeded into the slots in 0.47s
+    tokens hash 07c5abcf5895932e, text: The sea had been especially rough that week, and Keeper Elias Voss had grown used to the sound of gulls thinning into distance. On the morning of the twenty-thi
+8G sauto-stream exit 0 wall 43.2s
+    prefill 25 tokens in 6.81s (3.7 tok/s), 30001 page faults (2850 major)
+    decode 128 tokens in 35.59s (3.60 tok/s), 4 page faults/token (0.5 major)
+    cache: 3931 MiB, split layout, per token: hits 145.2, late hits 40.6, misses 22.3, prefetched 84.4, evictions 106.4, no-slot 0.0; read 459.6 MB/token in 320.0 requests (1.44 MB each), wait 152.3 ms/token, I/O 454 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 15 partly; experts 2228 predicted, 369 read late, 0 from slots; 11158 MB read, graph waited 1.08s in total; 925 experts seeded into the slots in 0.96s
+    tokens hash 07c5abcf5895932e, text: The sea had been especially rough that week, and Keeper Elias Voss had grown used to the sound of gulls thinning into distance. On the morning of the twenty-thi
+10G sauto-stream exit 0 wall 37.9s
+    prefill 25 tokens in 6.85s (3.6 tok/s), 31172 page faults (2975 major)
+    decode 128 tokens in 30.22s (4.24 tok/s), 4 page faults/token (0.5 major)
+    cache: 5950 MiB, split layout, per token: hits 159.4, late hits 30.9, misses 17.8, prefetched 67.1, evictions 84.4, no-slot 0.0; read 366.0 MB/token in 254.6 requests (1.44 MB each), wait 116.9 ms/token, I/O 451 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 22 partly; experts 2228 predicted, 369 read late, 0 from slots; 11158 MB read, graph waited 0.97s in total; 1400 experts seeded into the slots in 1.48s
+    tokens hash 07c5abcf5895932e, text: The sea had been especially rough that week, and Keeper Elias Voss had grown used to the sound of gulls thinning into distance. On the morning of the twenty-thi
+12G sauto-stream exit 0 wall 34.8s
+    prefill 25 tokens in 6.89s (3.6 tok/s), 31825 page faults (2788 major)
+    decode 128 tokens in 27.07s (4.73 tok/s), 2 page faults/token (0.5 major)
+    cache: 7438 MiB, split layout, per token: hits 168.0, late hits 24.7, misses 15.3, prefetched 56.5, evictions 71.1, no-slot 0.0; read 309.7 MB/token in 215.3 requests (1.44 MB each), wait 95.5 ms/token, I/O 450 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 24 partly; experts 2228 predicted, 369 read late, 0 from slots; 11158 MB read, graph waited 0.94s in total; 1741 experts seeded into the slots in 1.81s
+    tokens hash 07c5abcf5895932e, text: The sea had been especially rough that week, and Keeper Elias Voss had grown used to the sound of gulls thinning into distance. On the morning of the twenty-thi
+infinity sauto-stream exit 0 wall 34.8s
+    prefill 25 tokens in 6.87s (3.6 tok/s), 31888 page faults (2841 major)
+    decode 128 tokens in 27.08s (4.73 tok/s), 5 page faults/token (0.5 major)
+    cache: 7438 MiB, split layout, per token: hits 168.1, late hits 24.7, misses 15.3, prefetched 56.5, evictions 71.1, no-slot 0.0; read 309.7 MB/token in 215.3 requests (1.44 MB each), wait 95.9 ms/token, I/O 449 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 24 partly; experts 2228 predicted, 369 read late, 0 from slots; 11158 MB read, graph waited 0.95s in total; 1741 experts seeded into the slots in 1.82s
+    tokens hash 07c5abcf5895932e, text: The sea had been especially rough that week, and Keeper Elias Voss had grown used to the sound of gulls thinning into distance. On the morning of the twenty-thi

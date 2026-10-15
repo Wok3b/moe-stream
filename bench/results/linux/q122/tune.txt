@@ -1,0 +1,11 @@
+base exit 0 | decode 128 tokens in 56.45s (2.27 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 318.2, late hits 29.1, misses 36.7, prefetched 146.9 ... wait 119.1 ms/token
+depth2 exit 0 | decode 128 tokens in 59.31s (2.16 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 325.8, late hits 26.6, misses 31.6, prefetched 182.3 ... wait 125.6 ms/token
+width12 exit 0 | decode 128 tokens in 67.27s (1.90 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 297.3, late hits 68.0, misses 18.7, prefetched 250.4 ... wait 173.6 ms/token
+width16 exit 0 | decode 128 tokens in 87.81s (1.46 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 265.7, late hits 105.0, misses 13.3, prefetched 370.8 ... wait 309.0 ms/token
+io8 exit 0 | decode 128 tokens in 58.18s (2.20 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 312.4, late hits 34.9, misses 36.7, prefetched 146.9 ... wait 135.1 ms/token
+lfu32 exit 0 | decode 128 tokens in 57.00s (2.25 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 317.1, late hits 29.0, misses 37.9, prefetched 148.5 ... wait 121.9 ms/token
+lru exit 0 | decode 128 tokens in 57.90s (2.21 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 313.0, late hits 32.6, misses 38.5, prefetched 154.1 ... wait 127.1 ms/token
+base2 exit 0 | decode 128 tokens in 56.52s (2.26 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 318.1, late hits 29.3, misses 36.7, prefetched 146.9 ... wait 119.0 ms/token
+width4 exit 0 | decode 128 tokens in 57.25s (2.24 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 314.0, late hits 33.3, misses 36.7, prefetched 146.9 ... wait 126.8 ms/token
+width6 exit 0 | decode 128 tokens in 56.54s (2.26 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 317.6, late hits 29.7, misses 36.7, prefetched 146.9 ... wait 119.5 ms/token
+depth0 exit 0 | decode 128 tokens in 73.84s (1.73 tok/s), 1 page faults/token (0.5 major) | bc56b655e50bacb7 | hits 235.4, late hits 0.0, misses 148.6, prefetched 0.0 ... wait 301.1 ms/token

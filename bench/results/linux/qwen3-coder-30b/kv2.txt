@@ -1,0 +1,7 @@
+kvspeed-q8q4 exit 0 | 37 slots of 130.8 MiB | prefill 28 tokens in 4.83s (5.8 tok/s), 12033 decode 128 tokens in 12.58s (10.18 tok/s), 115  | 3bdbf675b1014ebd
+kvcode-f16-f16 exit 0 | 23 slots of 130.8 MiB | prefill 43 tokens in 5.55s (7.7 tok/s), 11456 decode 128 tokens in 38.27s (3.34 tok/s), 79  | 4040358aad55977b
+kvlong-f16-f16 exit 0 | 23 slots of 130.8 MiB | prefill 7853 tokens in 255.97s (30.7 tok/s), 13854 decode 64 tokens in 21.29s (3.01 tok/s), 191  | 64e041a0c696ee34
+kvcode-q8_0-q8_0 exit 0 | 34 slots of 130.8 MiB | prefill 43 tokens in 5.56s (7.7 tok/s), 11821 decode 128 tokens in 28.41s (4.51 tok/s), 107  | bd19111e96b673f7
+kvlong-q8_0-q8_0 exit 0 | 34 slots of 130.8 MiB | prefill 7853 tokens in 664.43s (11.8 tok/s), 14186 decode 64 tokens in 19.19s (3.33 tok/s), 289  | 3c77afd94ef3559f
+kvcode-q8_0-q4_0 exit 0 | 37 slots of 130.8 MiB | prefill 43 tokens in 5.56s (7.7 tok/s), 12029 decode 128 tokens in 26.73s (4.79 tok/s), 123  | 8d0e8b5842fec398
+kvlong-q8_0-q4_0 exit 0 | 37 slots of 130.8 MiB | prefill 7853 tokens in 671.07s (11.7 tok/s), 14533 decode 64 tokens in 18.69s (3.42 tok/s), 321  | 5c8139f337aa9f53

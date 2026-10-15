@@ -36,7 +36,7 @@ def main() -> None:
     model, question = args[0], text_arg(args[1])
     system = text_arg(args[2]) if len(args) > 2 else None
     proc = subprocess.Popen([str(SERVER), "-m", model, "--device", "none", "-c", "512", "-np", "1",
-                             "--host", "127.0.0.1", "--port", str(PORT)],
+                             "--no-warmup", "--no-repack", "--host", "127.0.0.1", "--port", str(PORT)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(300):

@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 49.9s
+    prefill 43 tokens in 5.55s (7.7 tok/s), 11706 page faults (1332 major)
+    decode 128 tokens in 43.33s (2.95 tok/s), 53 page faults/token (1.6 major)
+    cache: 2484 MiB, split layout, per token: hits 236.3, late hits 106.3, misses 41.5, prefetched 159.0, evictions 200.4, no-slot 0.0; read 576.8 MB/token in 601.5 requests (0.96 MB each), wait 236.5 ms/token, I/O 450 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 3113 predicted, 277 read late, 0 from slots; 9701 MB read, graph waited 3.71s in total; 893 experts seeded into the slots in 0.61s
+    tokens hash 4040358aad55977b, text:  ```python import pandas as pd import numpy as np from typing import Dict, Tuple, Any  def analyze_csv_statistics(file_path: str) -> Dict[str, Dict[str, float]]
+8G sauto-stream exit 0 wall 34.7s
+    prefill 43 tokens in 5.57s (7.7 tok/s), 12813 page faults (1327 major)
+    decode 128 tokens in 28.11s (4.55 tok/s), 156 page faults/token (6.3 major)
+    cache: 4577 MiB, split layout, per token: hits 303.1, late hits 55.0, misses 26.0, prefetched 88.6, evictions 114.3, no-slot 0.0; read 330.8 MB/token in 343.6 requests (0.96 MB each), wait 130.2 ms/token, I/O 446 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 3113 predicted, 277 read late, 0 from slots; 9701 MB read, graph waited 3.17s in total; 1645 experts seeded into the slots in 1.16s
+    tokens hash 4040358aad55977b, text:  ```python import pandas as pd import numpy as np from typing import Dict, Tuple, Any  def analyze_csv_statistics(file_path: str) -> Dict[str, Dict[str, float]]
+10G sauto-stream exit 0 wall 26.5s
+    prefill 43 tokens in 5.54s (7.8 tok/s), 13900 page faults (1305 major)
+    decode 128 tokens in 19.94s (6.42 tok/s), 246 page faults/token (2.6 major)
+    cache: 6669 MiB, split layout, per token: hits 335.5, late hits 31.2, misses 17.3, prefetched 52.9, evictions 69.8, no-slot 0.0; read 203.2 MB/token in 210.6 requests (0.96 MB each), wait 78.4 ms/token, I/O 451 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 3113 predicted, 277 read late, 0 from slots; 9701 MB read, graph waited 2.68s in total; 2397 experts seeded into the slots in 1.67s
+    tokens hash 4040358aad55977b, text:  ```python import pandas as pd import numpy as np from typing import Dict, Tuple, Any  def analyze_csv_statistics(file_path: str) -> Dict[str, Dict[str, float]]
+12G sauto-stream exit 0 wall 22.9s
+    prefill 43 tokens in 5.56s (7.7 tok/s), 14200 page faults (1307 major)
+    decode 128 tokens in 16.30s (7.85 tok/s), 8 page faults/token (0.2 major)
+    cache: 8108 MiB, split layout, per token: hits 351.0, late hits 20.3, misses 12.8, prefetched 35.6, evictions 47.7, no-slot 0.0; read 140.3 MB/token in 145.1 requests (0.97 MB each), wait 55.1 ms/token, I/O 451 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 3113 predicted, 277 read late, 0 from slots; 9701 MB read, graph waited 2.30s in total; 2887 experts seeded into the slots in 2.02s
+    tokens hash 4040358aad55977b, text:  ```python import pandas as pd import numpy as np from typing import Dict, Tuple, Any  def analyze_csv_statistics(file_path: str) -> Dict[str, Dict[str, float]]
+infinity sauto-stream exit 0 wall 22.8s
+    prefill 43 tokens in 5.55s (7.7 tok/s), 14257 page faults (1326 major)
+    decode 128 tokens in 16.26s (7.87 tok/s), 7 page faults/token (0.2 major)
+    cache: 8108 MiB, split layout, per token: hits 350.8, late hits 20.4, misses 12.8, prefetched 35.6, evictions 47.7, no-slot 0.0; read 140.3 MB/token in 145.1 requests (0.97 MB each), wait 55.0 ms/token, I/O 453 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 3113 predicted, 277 read late, 0 from slots; 9701 MB read, graph waited 2.32s in total; 2887 experts seeded into the slots in 2.02s
+    tokens hash 4040358aad55977b, text:  ```python import pandas as pd import numpy as np from typing import Dict, Tuple, Any  def analyze_csv_statistics(file_path: str) -> Dict[str, Dict[str, float]]

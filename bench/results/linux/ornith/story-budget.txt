@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 27.2s
+    prefill 33 tokens in 4.63s (7.1 tok/s), 22296 page faults (2456 major)
+    decode 128 tokens in 21.14s (6.05 tok/s), 39 page faults/token (9.6 major)
+    cache: 2760 MiB, split layout, per token: hits 268.0, late hits 27.3, misses 24.7, prefetched 70.5, evictions 95.2, no-slot 0.0; read 184.7 MB/token in 285.6 requests (0.65 MB each), wait 58.9 ms/token, I/O 413 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 9 partly; experts 3121 predicted, 553 read late, 0 from slots; 7031 MB read, graph waited 1.89s in total; 1520 experts seeded into the slots in 0.72s
+    tokens hash 2ecf93092b4d17c1, text: # The Keeper's Message  Eleanor had tended the Blackwood Point lighthouse for twenty-three years, and in all that time, she had never found a message in a bottl
+8G sauto-stream exit 0 wall 23.1s
+    prefill 33 tokens in 4.67s (7.1 tok/s), 22755 page faults (2450 major)
+    decode 128 tokens in 16.99s (7.53 tok/s), 30 page faults/token (5.9 major)
+    cache: 4867 MiB, split layout, per token: hits 289.9, late hits 13.5, misses 16.6, prefetched 39.6, evictions 56.1, no-slot 0.0; read 109.7 MB/token in 168.5 requests (0.65 MB each), wait 35.0 ms/token, I/O 420 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 13 partly; experts 3121 predicted, 553 read late, 0 from slots; 7031 MB read, graph waited 1.46s in total; 2676 experts seeded into the slots in 1.25s
+    tokens hash 2ecf93092b4d17c1, text: # The Keeper's Message  Eleanor had tended the Blackwood Point lighthouse for twenty-three years, and in all that time, she had never found a message in a bottl
+10G sauto-stream exit 0 wall 21.5s
+    prefill 33 tokens in 4.66s (7.1 tok/s), 23605 page faults (2323 major)
+    decode 128 tokens in 15.41s (8.31 tok/s), 367 page faults/token (5.2 major)
+    cache: 6902 MiB, split layout, per token: hits 299.7, late hits 8.3, misses 12.0, prefetched 26.9, evictions 33.6, no-slot 0.0; read 76.2 MB/token in 116.8 requests (0.65 MB each), wait 24.9 ms/token, I/O 403 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 14 partly; experts 3121 predicted, 553 read late, 0 from slots; 7031 MB read, graph waited 1.31s in total; 3122 experts seeded into the slots in 1.49s
+    tokens hash 2ecf93092b4d17c1, text: # The Keeper's Message  Eleanor had tended the Blackwood Point lighthouse for twenty-three years, and in all that time, she had never found a message in a bottl
+12G sauto-stream exit 0 wall 20.4s
+    prefill 33 tokens in 4.69s (7.0 tok/s), 23461 page faults (2300 major)
+    decode 128 tokens in 14.24s (8.99 tok/s), 38 page faults/token (0.4 major)
+    cache: 8355 MiB, split layout, per token: hits 303.1, late hits 7.1, misses 9.8, prefetched 22.4, evictions 21.3, no-slot 0.0; read 62.9 MB/token in 96.6 requests (0.65 MB each), wait 20.5 ms/token, I/O 405 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 14 partly; experts 3121 predicted, 553 read late, 0 from slots; 7031 MB read, graph waited 1.35s in total; 3195 experts seeded into the slots in 1.49s
+    tokens hash 2ecf93092b4d17c1, text: # The Keeper's Message  Eleanor had tended the Blackwood Point lighthouse for twenty-three years, and in all that time, she had never found a message in a bottl
+infinity sauto-stream exit 0 wall 20.2s
+    prefill 33 tokens in 4.67s (7.1 tok/s), 23866 page faults (2290 major)
+    decode 128 tokens in 14.02s (9.13 tok/s), 15 page faults/token (0.4 major)
+    cache: 8355 MiB, split layout, per token: hits 303.4, late hits 6.9, misses 9.8, prefetched 22.4, evictions 21.3, no-slot 0.0; read 62.9 MB/token in 96.6 requests (0.65 MB each), wait 21.0 ms/token, I/O 402 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 14 partly; experts 3121 predicted, 553 read late, 0 from slots; 7031 MB read, graph waited 1.36s in total; 3195 experts seeded into the slots in 1.49s
+    tokens hash 2ecf93092b4d17c1, text: # The Keeper's Message  Eleanor had tended the Blackwood Point lighthouse for twenty-three years, and in all that time, she had never found a message in a bottl

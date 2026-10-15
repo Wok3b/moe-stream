@@ -1,0 +1,24 @@
+8G sauto-stream exit 1 wall 0.9s
+10G sauto-stream exit 0 wall 76.0s
+    prefill 33 tokens in 11.68s (2.8 tok/s), 124231 page faults (11826 major)
+    decode 128 tokens in 63.32s (2.02 tok/s), 1 page faults/token (0.5 major)
+    cache: 2800 MiB, split layout, per token: hits 298.7, late hits 40.1, misses 45.2, prefetched 181.2, evictions 226.4, no-slot 0.0; read 729.0 MB/token in 679.3 requests (1.07 MB each), wait 157.3 ms/token, I/O 452 MB/s per thread
+    stream: 1572 MiB buffers, 0 layers loaded whole, 48 partly; experts 3988 predicted, 593 read late, 0 from slots; 14748 MB read, graph waited 1.15s in total; 912 experts seeded into the slots in 0.71s
+    tokens hash bc56b655e50bacb7, text: Elias Thorne had lived on the jagged rock of Blackwood for thirty years, a solitary sentinel against the roaring Atlantic. His world was defined by the rhythmic
+12G sauto-stream exit 0 wall 68.9s
+    prefill 33 tokens in 11.48s (2.9 tok/s), 124467 page faults (11676 major)
+    decode 128 tokens in 56.41s (2.27 tok/s), 1 page faults/token (0.5 major)
+    cache: 4273 MiB, split layout, per token: hits 318.2, late hits 29.1, misses 36.7, prefetched 146.9, evictions 183.6, no-slot 0.0; read 591.0 MB/token in 550.7 requests (1.07 MB each), wait 118.6 ms/token, I/O 453 MB/s per thread
+    stream: 1572 MiB buffers, 0 layers loaded whole, 48 partly; experts 3988 predicted, 593 read late, 0 from slots; 14748 MB read, graph waited 1.11s in total; 1392 experts seeded into the slots in 1.10s
+    tokens hash bc56b655e50bacb7, text: Elias Thorne had lived on the jagged rock of Blackwood for thirty years, a solitary sentinel against the roaring Atlantic. His world was defined by the rhythmic
+infinity sauto-stream exit 0 wall 68.9s
+    prefill 33 tokens in 11.45s (2.9 tok/s), 124195 page faults (11597 major)
+    decode 128 tokens in 56.37s (2.27 tok/s), 1 page faults/token (0.5 major)
+    cache: 4273 MiB, split layout, per token: hits 318.4, late hits 28.9, misses 36.7, prefetched 146.9, evictions 183.6, no-slot 0.0; read 591.0 MB/token in 550.7 requests (1.07 MB each), wait 118.4 ms/token, I/O 453 MB/s per thread
+    stream: 1572 MiB buffers, 0 layers loaded whole, 48 partly; experts 3988 predicted, 593 read late, 0 from slots; 14748 MB read, graph waited 1.11s in total; 1392 experts seeded into the slots in 1.11s
+    tokens hash bc56b655e50bacb7, text: Elias Thorne had lived on the jagged rock of Blackwood for thirty years, a solitary sentinel against the roaring Atlantic. His world was defined by the rhythmic
+8G sauto-nostream exit 0
+    prefill 33 tokens in 79.75s (0.4 tok/s), 3589286 page faults (3283164 major)
+    decode 128 tokens in 68.21s (1.88 tok/s), 4446 page faults/token (1.9 major)
+    cache: 2210 MiB, split layout, per token: hits 280.0, late hits 53.6, misses 50.4, prefetched 201.8, evictions 246.6, no-slot 0.0; read 811.9 MB/token in 756.6 requests (1.07 MB each), wait 184.0 ms/token, I/O 445 MB/s per thread
+    tokens hash bc56b655e50bacb7, text: Elias Thorne had lived on the jagged rock of Blackwood for thirty years, a solitary sentinel against the roaring Atlantic. His world was defined by the rhythmic

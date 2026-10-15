@@ -1,0 +1,34 @@
+{
+ "story": {
+  "text": "Elias Thorne had lived on the jagged promontory of Blackwood Point for thirty years, a solitary sentinel against the roaring Atlantic. His world was a rhythmic cycle of polishing brass, trimming wicks, and watching the horizon until his eyes burned. The lighthouse beam cut through the fog, a steady heartbeat in the chaotic dark, but Elias's own heart had long since settled into a quiet, dusty rhythm.\n\nIt was a Tuesday, the kind of gray, drizzling afternoon that made the sea look like a sheet of hammered lead. While checking the perimeter for driftwood that might damage the foundation, Elias spotted something",
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 33,
+   "prompt_ms": 13254.088,
+   "prompt_per_token_ms": 401.63903030303027,
+   "prompt_per_second": 2.489797864628634,
+   "predicted_n": 128,
+   "predicted_ms": 136338.12,
+   "predicted_per_token_ms": 1073.5285039370078,
+   "predicted_per_second": 0.9315076370423767,
+   "draft_n": 183,
+   "draft_n_accepted": 65
+  }
+ },
+ "code": {
+  "text": "Here is a Python function that accomplishes this task using the `pandas` library, which is the standard tool for efficient data manipulation in Python.\n\n### Python Function\n\n```python\nimport pandas as pd\nimport numpy as np\n\ndef analyze_numeric_columns(csv_path):\n    \"\"\"\n    Reads a CSV file and returns the mean, median, and standard deviation \n    for every numeric column.\n    \n    Parameters:\n    csv_path (str): Path to the CSV file.\n    \n    Returns:\n    dict: A dictionary where keys are column names and values are dictionaries \n          containing 'mean', 'median',",
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 48,
+   "prompt_ms": 11419.413,
+   "prompt_per_token_ms": 237.9044375,
+   "prompt_per_second": 4.203368421826936,
+   "predicted_n": 128,
+   "predicted_ms": 80578.468,
+   "predicted_per_token_ms": 634.4761259842519,
+   "predicted_per_second": 1.5761034324951426,
+   "draft_n": 105,
+   "draft_n_accepted": 91
+  }
+ }
+}

@@ -1,0 +1,7 @@
+<|im_start|>user
+Write a Python function that reads a CSV file and returns the mean, median and standard deviation of every numeric column. Then explain how it handles missing values and non-numeric columns.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+

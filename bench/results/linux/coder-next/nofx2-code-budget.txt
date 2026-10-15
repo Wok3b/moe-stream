@@ -1,0 +1,6 @@
+infinity sauto-stream exit 0 wall 34.7s
+    prefill 43 tokens in 7.36s (5.8 tok/s), 24355 page faults (2107 major)
+    decode 128 tokens in 26.11s (4.90 tok/s), 0 page faults/token (0.2 major)
+    cache: 7439 MiB, split layout, per token: hits 408.6, late hits 40.9, misses 30.5, prefetched 101.0, evictions 131.4, no-slot 0.0; read 236.1 MB/token in 394.6 requests (0.60 MB each), wait 73.5 ms/token, I/O 408 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 5920 predicted, 727 read late, 0 from slots; 11896 MB read, graph waited 2.84s in total; 4352 experts seeded into the slots in 1.92s
+    tokens hash ad78714debd1532a, text: ,   # Python Function for Descriptive Statistics on CSV Data  Here's a function that reads a CSV file and computes the mean, median, and standard deviation for 

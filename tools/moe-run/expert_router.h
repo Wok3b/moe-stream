@@ -44,6 +44,7 @@ struct expert_router {
     int   k        = 0; // experts used per token
     int   gating   = 0;
     float eps      = 1e-6f;
+    bool  layer_norm = false; // LayerNorm (subtract the mean) instead of RMSNorm
     std::string inp_name = "ffn_inp"; // graph tensor holding the residual the router reads
     std::vector<layer> layers;
 
@@ -51,12 +52,18 @@ struct expert_router {
     bool init(const llama_model * model) {
         const auto & hp = model->hparams;
         n_layer  = (int) model->layers.size(); // hparams.n_layer() is not exported from the DLL
-        inp_name = model->arch == LLM_ARCH_GEMMA4     ? "attn_out" :
-                   model->arch == LLM_ARCH_QWEN35MOE ? "attn_residual" : "ffn_inp";
+        const bool qwen_post_norm = model->arch == LLM_ARCH_QWEN35MOE || model->arch == LLM_ARCH_QWEN3NEXT;
+        // cohere2moe runs attention and the MoE in parallel on attn_norm(layer input), so the previous
+        // layer's output routes the next layer exactly (models/cohere2moe.cpp)
+        const bool parallel_block = model->arch == LLM_ARCH_COHERE2MOE;
+        inp_name = model->arch == LLM_ARCH_GEMMA4 ? "attn_out" :
+                   qwen_post_norm                ? "attn_residual" :
+                   parallel_block                ? "l_out" : "ffn_inp";
         n_embd   = (int) hp.n_embd;
         n_expert = (int) hp.n_expert;
         k        = (int) hp.n_expert_used_arr[0];
-        eps      = hp.f_norm_rms_eps;
+        layer_norm = parallel_block && hp.f_norm_rms_eps == 0.0f;
+        eps      = layer_norm ? hp.f_norm_eps : hp.f_norm_rms_eps;
         gating   = (int) hp.expert_gating_func;
         layers.assign(n_layer, {});
         for (int il = 0; il < n_layer; ++il) {
@@ -71,8 +78,10 @@ struct expert_router {
                 for (auto & v : w.norm) {
                     v /= sqrtf((float) n_embd);
                 }
-            } else if (model->arch == LLM_ARCH_QWEN35MOE) {
-                w.norm = to_f32(L.attn_post_norm); // models/qwen35moe.cpp: routes on rms_norm(attn_residual)
+            } else if (qwen_post_norm) {
+                w.norm = to_f32(L.attn_post_norm); // models/qwen35moe.cpp, qwen3next.cpp: rms_norm(attn_residual)
+            } else if (parallel_block) {
+                w.norm = to_f32(L.attn_norm);
             } else if (L.ffn_norm) {
                 w.norm = to_f32(L.ffn_norm);
             } else {
@@ -95,13 +104,21 @@ struct expert_router {
     // scores of layer il's router for the pre-norm residual x; xn is [n_embd] scratch, logits [n_expert]
     void route(int il, const float * x, float * xn, float * logits) const {
         const auto & w = layers[il];
+        float mean = 0.0f;
+        if (layer_norm) {
+            double sum = 0.0;
+            for (int i = 0; i < n_embd; ++i) {
+                sum += x[i];
+            }
+            mean = (float) (sum / n_embd);
+        }
         double ss = 0.0;
         for (int i = 0; i < n_embd; ++i) {
-            ss += (double) x[i] * x[i];
+            ss += (double) (x[i] - mean) * (x[i] - mean);
         }
         const float scale = 1.0f / sqrtf((float) (ss / n_embd) + eps);
         for (int i = 0; i < n_embd; ++i) {
-            xn[i] = x[i] * scale * w.norm[i];
+            xn[i] = (x[i] - mean) * scale * w.norm[i];
         }
         // independent lanes: a single float accumulator cannot be vectorized without -ffast-math
         constexpr int LANES = 16;

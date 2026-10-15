@@ -1,0 +1,9 @@
+base exit 0 | decode 128 tokens in 26.04s (4.91 tok/s), 0 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 408.3, late hits 41.1, misses 30.5, prefetched 101.0 ... wait 74.0 ms/token
+nostream exit 0 | decode 128 tokens in 26.31s (4.87 tok/s), 18654 page faults/token (2.3 major) | ad78714debd1532a | 114 slots of 81.8 MiB | hits 405.1, late hits 45.8, misses 29.2, prefetched 96.3 ... wait 81.6 ms/token
+depth2 exit 0 | decode 128 tokens in 26.43s (4.84 tok/s), 7 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 426.4, late hits 27.6, misses 26.0, prefetched 129.0 ... wait 68.9 ms/token
+width14 exit 0 | decode 128 tokens in 29.57s (4.33 tok/s), 0 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 401.9, late hits 60.5, misses 17.6, prefetched 165.9 ... wait 89.4 ms/token
+width20 exit 0 | decode 128 tokens in 41.33s (3.10 tok/s), 0 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 392.0, late hits 77.0, misses 11.0, prefetched 284.9 ... wait 163.4 ms/token
+io6 exit 0 | decode 128 tokens in 26.24s (4.88 tok/s), 0 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 407.2, late hits 42.2, misses 30.5, prefetched 101.0 ... wait 76.4 ms/token
+io8 exit 0 | decode 128 tokens in 26.61s (4.81 tok/s), 0 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 406.3, late hits 43.2, misses 30.5, prefetched 101.0 ... wait 79.4 ms/token
+t5 exit 0 | decode 128 tokens in 25.75s (4.97 tok/s), 0 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 407.9, late hits 41.6, misses 30.5, prefetched 101.0 ... wait 75.6 ms/token
+base2 exit 0 | decode 128 tokens in 26.18s (4.89 tok/s), 1 page faults/token (0.2 major) | ad78714debd1532a | 91 slots of 81.8 MiB | hits 408.0, late hits 41.5, misses 30.5, prefetched 101.0 ... wait 74.8 ms/token

@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 44.1s
+    prefill 134 tokens in 10.86s (12.3 tok/s), 39895 page faults (6156 major)
+    decode 128 tokens in 32.22s (3.97 tok/s), 0 page faults/token (0.0 major)
+    cache: 2617 MiB, split layout, per token: hits 308.5, late hits 75.5, misses 0.0, prefetched 75.5, evictions 75.5, no-slot 0.0; read 215.6 MB/token in 226.4 requests (0.95 MB each), wait 150.9 ms/token, I/O 418 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.94s in total; 960 experts seeded into the slots in 0.44s
+    tokens hash 16fc1a72beedc5dc, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to sa
+8G sauto-stream exit 0 wall 34.1s
+    prefill 134 tokens in 11.25s (11.9 tok/s), 40294 page faults (6150 major)
+    decode 128 tokens in 21.82s (5.87 tok/s), 0 page faults/token (0.0 major)
+    cache: 4712 MiB, split layout, per token: hits 348.5, late hits 35.3, misses 0.1, prefetched 35.3, evictions 35.5, no-slot 0.0; read 101.3 MB/token in 106.4 requests (0.95 MB each), wait 76.2 ms/token, I/O 409 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.87s in total; 1728 experts seeded into the slots in 0.78s
+    tokens hash 16fc1a72beedc5dc, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to sa
+10G sauto-stream exit 0 wall 29.0s
+    prefill 134 tokens in 11.43s (11.7 tok/s), 41620 page faults (6163 major)
+    decode 128 tokens in 16.57s (7.72 tok/s), 0 page faults/token (0.0 major)
+    cache: 6806 MiB, split layout, per token: hits 365.3, late hits 18.7, misses 0.0, prefetched 18.7, evictions 18.7, no-slot 0.0; read 53.4 MB/token in 56.1 requests (0.95 MB each), wait 40.8 ms/token, I/O 420 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.73s in total; 2496 experts seeded into the slots in 1.12s
+    tokens hash 16fc1a72beedc5dc, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to sa
+12G sauto-stream exit 0 wall 27.8s
+    prefill 134 tokens in 11.87s (11.3 tok/s), 54565 page faults (6194 major)
+    decode 128 tokens in 14.85s (8.62 tok/s), 6 page faults/token (0.0 major)
+    cache: 8246 MiB, split layout, per token: hits 371.6, late hits 12.4, misses 0.0, prefetched 12.4, evictions 12.4, no-slot 0.0; read 35.3 MB/token in 37.1 requests (0.95 MB each), wait 29.4 ms/token, I/O 396 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.94s in total; 3024 experts seeded into the slots in 1.35s
+    tokens hash 16fc1a72beedc5dc, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to sa
+infinity sauto-stream exit 0 wall 27.4s
+    prefill 134 tokens in 11.69s (11.5 tok/s), 42322 page faults (6194 major)
+    decode 128 tokens in 14.72s (8.69 tok/s), 4 page faults/token (0.0 major)
+    cache: 8246 MiB, split layout, per token: hits 371.6, late hits 12.4, misses 0.0, prefetched 12.4, evictions 12.4, no-slot 0.0; read 35.3 MB/token in 37.1 requests (0.95 MB each), wait 28.3 ms/token, I/O 412 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.78s in total; 3024 experts seeded into the slots in 1.34s
+    tokens hash 16fc1a72beedc5dc, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to sa

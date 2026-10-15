@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 46.0s
+    prefill 151 tokens in 11.39s (13.3 tok/s), 39691 page faults (6111 major)
+    decode 128 tokens in 33.53s (3.82 tok/s), 0 page faults/token (0.0 major)
+    cache: 2617 MiB, split layout, per token: hits 304.1, late hits 79.9, misses 0.0, prefetched 79.9, evictions 79.9, no-slot 0.0; read 228.3 MB/token in 239.6 requests (0.95 MB each), wait 159.8 ms/token, I/O 415 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4489 predicted, 0 read late, 0 from slots; 12832 MB read, graph waited 5.98s in total; 960 experts seeded into the slots in 0.44s
+    tokens hash d72d72cda6e1cff9, text: We need to write a Python function that reads a CSV file and returns the mean, median, and standard deviation of every numeric column. Then explain how it handl
+8G sauto-stream exit 0 wall 35.5s
+    prefill 151 tokens in 11.63s (13.0 tok/s), 40147 page faults (6060 major)
+    decode 128 tokens in 22.85s (5.60 tok/s), 0 page faults/token (0.0 major)
+    cache: 4712 MiB, split layout, per token: hits 344.3, late hits 39.7, misses 0.0, prefetched 39.7, evictions 39.7, no-slot 0.0; read 113.5 MB/token in 119.1 requests (0.95 MB each), wait 83.7 ms/token, I/O 420 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4489 predicted, 0 read late, 0 from slots; 12832 MB read, graph waited 6.04s in total; 1728 experts seeded into the slots in 0.77s
+    tokens hash d72d72cda6e1cff9, text: We need to write a Python function that reads a CSV file and returns the mean, median, and standard deviation of every numeric column. Then explain how it handl
+10G sauto-stream exit 0 wall 30.2s
+    prefill 151 tokens in 11.92s (12.7 tok/s), 41412 page faults (6090 major)
+    decode 128 tokens in 17.30s (7.40 tok/s), 0 page faults/token (0.0 major)
+    cache: 6806 MiB, split layout, per token: hits 362.4, late hits 21.6, misses 0.0, prefetched 21.6, evictions 21.6, no-slot 0.0; read 61.7 MB/token in 64.8 requests (0.95 MB each), wait 45.5 ms/token, I/O 435 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4489 predicted, 0 read late, 0 from slots; 12832 MB read, graph waited 5.99s in total; 2496 experts seeded into the slots in 1.11s
+    tokens hash d72d72cda6e1cff9, text: We need to write a Python function that reads a CSV file and returns the mean, median, and standard deviation of every numeric column. Then explain how it handl
+12G sauto-stream exit 0 wall 27.9s
+    prefill 151 tokens in 11.75s (12.9 tok/s), 42315 page faults (6128 major)
+    decode 128 tokens in 15.10s (8.48 tok/s), 0 page faults/token (0.0 major)
+    cache: 8246 MiB, split layout, per token: hits 370.0, late hits 14.0, misses 0.0, prefetched 14.0, evictions 14.0, no-slot 0.0; read 40.1 MB/token in 42.1 requests (0.95 MB each), wait 30.5 ms/token, I/O 427 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4489 predicted, 0 read late, 0 from slots; 12832 MB read, graph waited 5.79s in total; 3024 experts seeded into the slots in 1.33s
+    tokens hash d72d72cda6e1cff9, text: We need to write a Python function that reads a CSV file and returns the mean, median, and standard deviation of every numeric column. Then explain how it handl
+infinity sauto-stream exit 0 wall 27.8s
+    prefill 151 tokens in 11.74s (12.9 tok/s), 42322 page faults (6124 major)
+    decode 128 tokens in 15.04s (8.51 tok/s), 0 page faults/token (0.0 major)
+    cache: 8246 MiB, split layout, per token: hits 370.0, late hits 14.0, misses 0.0, prefetched 14.0, evictions 14.0, no-slot 0.0; read 40.1 MB/token in 42.1 requests (0.95 MB each), wait 30.0 ms/token, I/O 439 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4489 predicted, 0 read late, 0 from slots; 12832 MB read, graph waited 5.75s in total; 3024 experts seeded into the slots in 1.33s
+    tokens hash d72d72cda6e1cff9, text: We need to write a Python function that reads a CSV file and returns the mean, median, and standard deviation of every numeric column. Then explain how it handl

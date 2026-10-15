@@ -1,0 +1,7 @@
+<|im_start|>user
+Write a 400-word story about a lighthouse keeper who finds a message in a bottle.<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+

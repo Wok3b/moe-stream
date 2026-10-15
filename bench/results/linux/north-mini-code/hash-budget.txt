@@ -1,0 +1,30 @@
+infinity mmap exit 0 wall 70.6s
+    prefill 134 tokens in 58.30s (2.3 tok/s), 3132751 page faults (3053635 major)
+    decode 32 tokens in 10.99s (2.91 tok/s), 10410 page faults/token (10400.2 major)
+    tokens hash 78c81cd41d40dfd7, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to
+infinity sauto-stream exit 0 wall 16.5s
+    prefill 134 tokens in 11.48s (11.7 tok/s), 42467 page faults (6131 major)
+    decode 32 tokens in 4.04s (7.91 tok/s), 0 page faults/token (0.0 major)
+    cache: 8115 MiB, split layout, per token: hits 365.6, late hits 18.4, misses 0.0, prefetched 18.4, evictions 18.4, no-slot 0.0; read 52.6 MB/token in 55.2 requests (0.95 MB each), wait 38.5 ms/token, I/O 446 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.78s in total; 2976 experts seeded into the slots in 1.31s
+    tokens hash 78c81cd41d40dfd7, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to
+8G mmap exit 0 wall 95.1s
+    prefill 134 tokens in 58.51s (2.3 tok/s), 3136316 page faults (3054286 major)
+    decode 32 tokens in 35.46s (0.90 tok/s), 41387 page faults/token (41348.4 major)
+    tokens hash 78c81cd41d40dfd7, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to
+8G sauto-stream exit 0 wall 18.0s
+    prefill 134 tokens in 11.07s (12.1 tok/s), 40682 page faults (6185 major)
+    decode 32 tokens in 5.96s (5.37 tok/s), 0 page faults/token (0.0 major)
+    cache: 4712 MiB, split layout, per token: hits 338.9, late hits 45.1, misses 0.0, prefetched 45.1, evictions 45.1, no-slot 0.0; read 128.9 MB/token in 135.2 requests (0.95 MB each), wait 91.9 ms/token, I/O 425 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.77s in total; 1728 experts seeded into the slots in 0.78s
+    tokens hash 78c81cd41d40dfd7, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to
+6G mmap exit 0 wall 113.1s
+    prefill 134 tokens in 58.53s (2.3 tok/s), 3135866 page faults (3054404 major)
+    decode 32 tokens in 53.56s (0.60 tok/s), 66414 page faults/token (66348.1 major)
+    tokens hash 78c81cd41d40dfd7, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to
+6G sauto-stream exit 0 wall 20.5s
+    prefill 134 tokens in 10.51s (12.7 tok/s), 39354 page faults (6000 major)
+    decode 32 tokens in 9.04s (3.54 tok/s), 0 page faults/token (0.0 major)
+    cache: 2617 MiB, split layout, per token: hits 294.3, late hits 89.7, misses 0.0, prefetched 89.7, evictions 89.7, no-slot 0.0; read 256.5 MB/token in 269.2 requests (0.95 MB each), wait 180.6 ms/token, I/O 411 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 0 partly; experts 4367 predicted, 0 read late, 0 from slots; 12484 MB read, graph waited 5.85s in total; 960 experts seeded into the slots in 0.44s
+    tokens hash 78c81cd41d40dfd7, text: We need to write a 400-word story about a lighthouse keeper who finds a message in a bottle. Must be educational, informative, or creative content related to

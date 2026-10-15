@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 51.5s
+    prefill 43 tokens in 7.30s (5.9 tok/s), 41142 page faults (2182 major)
+    decode 128 tokens in 43.04s (2.97 tok/s), 81 page faults/token (24.5 major)
+    cache: 1880 MiB, split layout, per token: hits 306.1, late hits 109.3, misses 64.5, prefetched 231.3, evictions 295.9, no-slot 0.0; read 529.9 MB/token in 887.6 requests (0.60 MB each), wait 183.5 ms/token, I/O 423 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 5920 predicted, 727 read late, 0 from slots; 11896 MB read, graph waited 4.16s in total; 1104 experts seeded into the slots in 0.55s
+    tokens hash ad78714debd1532a, text: ,   # Python Function for Descriptive Statistics on CSV Data  Here's a function that reads a CSV file and computes the mean, median, and standard deviation for 
+8G sauto-stream exit 0 wall 41.9s
+    prefill 43 tokens in 7.34s (5.9 tok/s), 42800 page faults (2197 major)
+    decode 128 tokens in 33.37s (3.84 tok/s), 86 page faults/token (21.3 major)
+    cache: 3924 MiB, split layout, per token: hits 368.9, late hits 67.2, misses 43.9, prefetched 158.1, evictions 202.0, no-slot 0.0; read 362.1 MB/token in 605.9 requests (0.60 MB each), wait 116.5 ms/token, I/O 413 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 5920 predicted, 727 read late, 0 from slots; 11896 MB read, graph waited 3.67s in total; 2304 experts seeded into the slots in 1.07s
+    tokens hash ad78714debd1532a, text: ,   # Python Function for Descriptive Statistics on CSV Data  Here's a function that reads a CSV file and computes the mean, median, and standard deviation for 
+10G sauto-stream exit 0 wall 37.1s
+    prefill 43 tokens in 7.35s (5.9 tok/s), 44221 page faults (2174 major)
+    decode 128 tokens in 28.55s (4.48 tok/s), 92 page faults/token (22.5 major)
+    cache: 5967 MiB, split layout, per token: hits 394.2, late hits 50.8, misses 35.0, prefetched 121.1, evictions 156.2, no-slot 0.0; read 280.1 MB/token in 468.5 requests (0.60 MB each), wait 88.2 ms/token, I/O 410 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 5920 predicted, 727 read late, 0 from slots; 11896 MB read, graph waited 3.17s in total; 3504 experts seeded into the slots in 1.58s
+    tokens hash ad78714debd1532a, text: ,   # Python Function for Descriptive Statistics on CSV Data  Here's a function that reads a CSV file and computes the mean, median, and standard deviation for 
+12G sauto-stream exit 0 wall 34.6s
+    prefill 43 tokens in 7.32s (5.9 tok/s), 23688 page faults (2095 major)
+    decode 128 tokens in 26.03s (4.92 tok/s), 0 page faults/token (0.2 major)
+    cache: 7439 MiB, split layout, per token: hits 407.8, late hits 41.7, misses 30.5, prefetched 101.0, evictions 131.4, no-slot 0.0; read 236.1 MB/token in 394.6 requests (0.60 MB each), wait 74.4 ms/token, I/O 406 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 5920 predicted, 727 read late, 0 from slots; 11896 MB read, graph waited 2.81s in total; 4352 experts seeded into the slots in 1.89s
+    tokens hash ad78714debd1532a, text: ,   # Python Function for Descriptive Statistics on CSV Data  Here's a function that reads a CSV file and computes the mean, median, and standard deviation for 
+infinity sauto-stream exit 0 wall 34.5s
+    prefill 43 tokens in 7.32s (5.9 tok/s), 24090 page faults (2028 major)
+    decode 128 tokens in 25.96s (4.93 tok/s), 0 page faults/token (0.2 major)
+    cache: 7439 MiB, split layout, per token: hits 407.8, late hits 41.7, misses 30.5, prefetched 101.0, evictions 131.4, no-slot 0.0; read 236.1 MB/token in 394.6 requests (0.60 MB each), wait 74.3 ms/token, I/O 408 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 5920 predicted, 727 read late, 0 from slots; 11896 MB read, graph waited 2.88s in total; 4352 experts seeded into the slots in 1.87s
+    tokens hash ad78714debd1532a, text: ,   # Python Function for Descriptive Statistics on CSV Data  Here's a function that reads a CSV file and computes the mean, median, and standard deviation for 

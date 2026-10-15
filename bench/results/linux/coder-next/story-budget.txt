@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 39.9s
+    prefill 28 tokens in 5.43s (5.2 tok/s), 40341 page faults (2173 major)
+    decode 128 tokens in 33.29s (3.84 tok/s), 89 page faults/token (22.1 major)
+    cache: 1880 MiB, split layout, per token: hits 363.3, late hits 76.9, misses 39.8, prefetched 163.0, evictions 202.8, no-slot 0.0; read 364.1 MB/token in 608.5 requests (0.60 MB each), wait 118.4 ms/token, I/O 416 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 4248 predicted, 528 read late, 0 from slots; 8549 MB read, graph waited 2.82s in total; 1104 experts seeded into the slots in 0.54s
+    tokens hash 0920ea28274b837b, text:     The salt-stained walls of the Sentinel Rock Lighthouse groaned under the weight of the November gale. Elias Thorne, seventy-three and weathered like the gra
+8G sauto-stream exit 0 wall 32.2s
+    prefill 28 tokens in 5.49s (5.1 tok/s), 41429 page faults (2187 major)
+    decode 128 tokens in 25.57s (5.01 tok/s), 87 page faults/token (21.8 major)
+    cache: 3924 MiB, split layout, per token: hits 409.5, late hits 45.6, misses 24.9, prefetched 99.7, evictions 124.5, no-slot 0.0; read 224.1 MB/token in 373.6 requests (0.60 MB each), wait 70.0 ms/token, I/O 404 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 1 partly; experts 4248 predicted, 528 read late, 0 from slots; 8549 MB read, graph waited 2.34s in total; 2304 experts seeded into the slots in 1.06s
+    tokens hash 0920ea28274b837b, text:     The salt-stained walls of the Sentinel Rock Lighthouse groaned under the weight of the November gale. Elias Thorne, seventy-three and weathered like the gra
+10G sauto-stream exit 0 wall 28.1s
+    prefill 28 tokens in 5.54s (5.1 tok/s), 40411 page faults (2200 major)
+    decode 128 tokens in 21.41s (5.98 tok/s), 99 page faults/token (21.0 major)
+    cache: 5967 MiB, split layout, per token: hits 430.6, late hits 31.0, misses 18.4, prefetched 66.0, evictions 84.1, no-slot 0.0; read 152.0 MB/token in 253.0 requests (0.60 MB each), wait 47.7 ms/token, I/O 406 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 3 partly; experts 4248 predicted, 528 read late, 0 from slots; 8549 MB read, graph waited 1.89s in total; 3478 experts seeded into the slots in 1.55s
+    tokens hash 0920ea28274b837b, text:     The salt-stained walls of the Sentinel Rock Lighthouse groaned under the weight of the November gale. Elias Thorne, seventy-three and weathered like the gra
+12G sauto-stream exit 0 wall 26.5s
+    prefill 28 tokens in 5.49s (5.1 tok/s), 24205 page faults (2160 major)
+    decode 128 tokens in 19.78s (6.47 tok/s), 3 page faults/token (0.4 major)
+    cache: 7439 MiB, split layout, per token: hits 441.9, late hits 23.0, misses 15.2, prefetched 50.7, evictions 62.8, no-slot 0.0; read 118.8 MB/token in 197.5 requests (0.60 MB each), wait 36.3 ms/token, I/O 402 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 4 partly; experts 4248 predicted, 528 read late, 0 from slots; 8549 MB read, graph waited 1.63s in total; 3987 experts seeded into the slots in 1.75s
+    tokens hash 0920ea28274b837b, text:     The salt-stained walls of the Sentinel Rock Lighthouse groaned under the weight of the November gale. Elias Thorne, seventy-three and weathered like the gra
+infinity sauto-stream exit 0 wall 26.1s
+    prefill 28 tokens in 5.50s (5.1 tok/s), 23540 page faults (2080 major)
+    decode 128 tokens in 19.34s (6.62 tok/s), 2 page faults/token (0.4 major)
+    cache: 7439 MiB, split layout, per token: hits 440.8, late hits 24.1, misses 15.2, prefetched 50.7, evictions 62.8, no-slot 0.0; read 118.8 MB/token in 197.5 requests (0.60 MB each), wait 38.1 ms/token, I/O 396 MB/s per thread
+    stream: 1856 MiB buffers, 0 layers loaded whole, 5 partly; experts 4248 predicted, 528 read late, 0 from slots; 8549 MB read, graph waited 1.71s in total; 3987 experts seeded into the slots in 1.72s
+    tokens hash 0920ea28274b837b, text:     The salt-stained walls of the Sentinel Rock Lighthouse groaned under the weight of the November gale. Elias Thorne, seventy-three and weathered like the gra

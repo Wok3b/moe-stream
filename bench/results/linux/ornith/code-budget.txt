@@ -1,0 +1,30 @@
+6G sauto-stream exit 0 wall 33.7s
+    prefill 48 tokens in 5.27s (9.1 tok/s), 21881 page faults (2384 major)
+    decode 128 tokens in 26.96s (4.75 tok/s), 23 page faults/token (4.7 major)
+    cache: 2760 MiB, split layout, per token: hits 239.2, late hits 39.7, misses 41.0, prefetched 108.3, evictions 149.3, no-slot 0.0; read 288.0 MB/token in 447.9 requests (0.64 MB each), wait 95.2 ms/token, I/O 420 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 5 partly; experts 3723 predicted, 630 read late, 0 from slots; 8328 MB read, graph waited 2.25s in total; 1520 experts seeded into the slots in 0.73s
+    tokens hash 90c171f0a40806a0, text: # CSV Column Statistics Function  Here's a Python function that reads a CSV file and computes statistics for numeric columns:  ```python import csv from statist
+8G sauto-stream exit 0 wall 28.2s
+    prefill 48 tokens in 5.44s (8.8 tok/s), 23513 page faults (2457 major)
+    decode 128 tokens in 21.33s (6.00 tok/s), 27 page faults/token (6.7 major)
+    cache: 4867 MiB, split layout, per token: hits 269.7, late hits 21.8, misses 28.4, prefetched 68.5, evictions 97.0, no-slot 0.0; read 188.0 MB/token in 290.9 requests (0.65 MB each), wait 59.5 ms/token, I/O 420 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 11 partly; experts 3723 predicted, 630 read late, 0 from slots; 8328 MB read, graph waited 1.90s in total; 2680 experts seeded into the slots in 1.24s
+    tokens hash 90c171f0a40806a0, text: # CSV Column Statistics Function  Here's a Python function that reads a CSV file and computes statistics for numeric columns:  ```python import csv from statist
+10G sauto-stream exit 0 wall 24.6s
+    prefill 48 tokens in 5.44s (8.8 tok/s), 23213 page faults (2308 major)
+    decode 128 tokens in 17.69s (7.24 tok/s), 366 page faults/token (3.0 major)
+    cache: 6902 MiB, split layout, per token: hits 287.3, late hits 12.7, misses 20.0, prefetched 44.0, evictions 62.1, no-slot 0.0; read 124.7 MB/token in 192.0 requests (0.65 MB each), wait 40.6 ms/token, I/O 417 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 15 partly; experts 3723 predicted, 630 read late, 0 from slots; 8328 MB read, graph waited 1.56s in total; 3561 experts seeded into the slots in 1.63s
+    tokens hash 90c171f0a40806a0, text: # CSV Column Statistics Function  Here's a Python function that reads a CSV file and computes statistics for numeric columns:  ```python import csv from statist
+12G sauto-stream exit 0 wall 22.9s
+    prefill 48 tokens in 5.41s (8.9 tok/s), 23699 page faults (2326 major)
+    decode 128 tokens in 15.95s (8.03 tok/s), 38 page faults/token (0.2 major)
+    cache: 8355 MiB, split layout, per token: hits 295.7, late hits 9.0, misses 15.3, prefetched 32.7, evictions 41.5, no-slot 0.0; read 93.8 MB/token in 144.0 requests (0.65 MB each), wait 30.2 ms/token, I/O 419 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 15 partly; experts 3723 predicted, 630 read late, 0 from slots; 8328 MB read, graph waited 1.50s in total; 3762 experts seeded into the slots in 1.75s
+    tokens hash 90c171f0a40806a0, text: # CSV Column Statistics Function  Here's a Python function that reads a CSV file and computes statistics for numeric columns:  ```python import csv from statist
+infinity sauto-stream exit 0 wall 22.9s
+    prefill 48 tokens in 5.37s (8.9 tok/s), 24172 page faults (2312 major)
+    decode 128 tokens in 16.05s (7.98 tok/s), 34 page faults/token (0.2 major)
+    cache: 8355 MiB, split layout, per token: hits 295.8, late hits 8.9, misses 15.3, prefetched 32.7, evictions 41.5, no-slot 0.0; read 93.8 MB/token in 144.0 requests (0.65 MB each), wait 30.1 ms/token, I/O 416 MB/s per thread
+    stream: 996 MiB buffers, 0 layers loaded whole, 15 partly; experts 3723 predicted, 630 read late, 0 from slots; 8328 MB read, graph waited 1.46s in total; 3762 experts seeded into the slots in 1.76s
+    tokens hash 90c171f0a40806a0, text: # CSV Column Statistics Function  Here's a Python function that reads a CSV file and computes statistics for numeric columns:  ```python import csv from statist

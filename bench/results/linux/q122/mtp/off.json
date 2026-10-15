@@ -1,0 +1,30 @@
+{
+ "story": {
+  "text": "Elias Thorne had lived on the jagged promontory of Blackwood Point for thirty years, a solitary sentinel against the roaring Atlantic. His world was defined by the rhythmic sweep of the great lens, the smell of brine and kerosene, and the relentless howl of the wind. He spoke to no one, save for the gulls and the occasional supply boat captain who dropped off crates of canned goods and mail.\n\nOne particularly violent Tuesday, a gale battered the coast with a ferocity that threatened to tear the lighthouse from its foundations. Elias spent the night securing the shutters and checking the fuel",
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 33,
+   "prompt_ms": 9227.405,
+   "prompt_per_token_ms": 279.61833333333334,
+   "prompt_per_second": 3.576303413581608,
+   "predicted_n": 128,
+   "predicted_ms": 62441.71,
+   "predicted_per_token_ms": 491.6670078740157,
+   "predicted_per_second": 2.033896893598846
+  }
+ },
+ "code": {
+  "text": "Here is a Python function that accomplishes this task using the `pandas` library, which is the standard tool for efficient data manipulation in Python.\n\n### Python Function\n\n```python\nimport pandas as pd\nimport numpy as np\n\ndef analyze_numeric_columns(csv_path):\n    \"\"\"\n    Reads a CSV file and returns the mean, median, and standard deviation \n    for every numeric column.\n    \n    Parameters:\n    csv_path (str): Path to the CSV file.\n    \n    Returns:\n    dict: A dictionary where keys are column names and values are dictionaries \n          containing 'mean', 'median',",
+  "timings": {
+   "cache_n": 0,
+   "prompt_n": 48,
+   "prompt_ms": 10937.169,
+   "prompt_per_token_ms": 227.8576875,
+   "prompt_per_second": 4.388704243300986,
+   "predicted_n": 128,
+   "predicted_ms": 66384.706,
+   "predicted_per_token_ms": 522.714220472441,
+   "predicted_per_second": 1.91309124725204
+  }
+ }
+}

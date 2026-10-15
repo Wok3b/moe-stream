@@ -26,6 +26,11 @@ generates exactly the same tokens as llama.cpp's own mmap path.
 - **Fits, and still faster.** Gemma 4 26B-A4B (10.5 GiB) runs at **10.1 tok/s**
   against mmap's 6.3, and at 9.3 tok/s in 8 GB, leaving the other half of the
   machine free. mmap in the same 8 GB: 4.9.
+- **Three times RAM.** Qwen3.5-122B-A10B (41.7 GiB, 2.9x the laptop's RAM)
+  decodes at 2.2 tok/s against mmap's 0.34, 6.5x, with the same tokens.
+- **A coder at 13 tok/s.** Qwen3-Coder-30B-A3B runs at 9.3 tok/s inside 8 GB
+  (mmap: 1.7) and 13.3 with no limit; North-Mini-Code and Ornith-1.5 write
+  code at about 6 tok/s inside 8 GB and 8-9 with no limit.
 
 | on a Ryzen 5 7430U, 15.4 GB, CPU only | weights | mmap decode | moe-stream decode | |
 |---|---|---|---|---|
@@ -35,11 +40,16 @@ generates exactly the same tokens as llama.cpp's own mmap path.
 | Gemma 4 26B-A4B UD-IQ3_S, 6 GB budget | 10.5 GiB | 1.97 tok/s | **5.93 tok/s** | 3.0x |
 | Gemma 4 26B-A4B UD-IQ3_S, 8 GB budget | 10.5 GiB | 4.88 tok/s | **9.33 tok/s** | 1.9x |
 | Gemma 4 26B-A4B UD-IQ3_S, no limit | 10.5 GiB | 6.35 tok/s | **10.14 tok/s** | 1.6x |
+| Qwen3.5-122B-A10B UD-IQ3_XXS, no limit | 41.7 GiB | 0.34 tok/s | **2.20 tok/s** | 6.5x |
+| Qwen3-Coder-Next Q4_K_S, no limit | 42.4 GiB | 1.30 tok/s | **5.77 tok/s** | 4.4x |
+| Qwen3-Coder-30B-A3B Q4_K_M, 8 GB budget | 17.3 GiB | 1.73 tok/s | **9.28 tok/s** | 5.4x |
+| Qwen3-Coder-30B-A3B Q4_K_M, no limit | 17.3 GiB | 6.62 tok/s | **13.33 tok/s** | 2.0x |
 
 mmap runs start with the model out of the page cache, as after a reboot; the
 6 and 8 GB moe-stream numbers are today's defaults (prefetch + LFU), the others
-`--cache-slots auto`. Every cell is in [docs/NOTES.md](docs/NOTES.md), Results
-11 to 17, with the raw logs in `bench/results/linux/`.
+`--cache-slots auto`; the 122B and Coder-Next rows are over 32 tokens, as mmap
+is too slow for 128. Every cell is in [docs/NOTES.md](docs/NOTES.md), Results 11
+to 17 and 20 to 23, with the raw logs in `bench/results/linux/`.
 
 ## Quickstart
 
@@ -190,12 +200,17 @@ spike (Results 1-5), the explicit cache and bundled layout (6-8), Gemma 4 and
 `llama-server` (9-10), the Linux port under cgroup budgets (11), a model twice
 the size of RAM (12), auto sizing (13), prefetch that pays (14), LFU eviction
 (15), clang vs GCC, no difference (16), prompt-aware prefill (17), a
-head-to-head with Colibri (18), and a 3 s start-up (19).
+head-to-head with Colibri (18), a 3 s start-up (19), a 122B model at three
+times RAM, where tuning and MTP drafting only made it slower (20), and five
+more models from 1.2 to 3x RAM: Qwen3-Coder-Next (21), Kimi-Linear (22),
+Qwen3-Coder-30B with what the KV cache type costs (23), North-Mini-Code, whose
+next layer's experts are known exactly (24), and Ornith-1.5 (25).
 
 Next, in the order it matters:
 
 1. **Cheaper wrong guesses.** Prefetch costs 30% more reads; guesses that land
    only in free or cold slots could keep that without evicting hot experts.
+   No gain on the 122B, where the drive is the limit; Qwen 3.6 is untested.
 2. **Bundled sidecar for the big models**: one read per miss instead of two or
    three, worth 1.5x on OLMoE.
 3. **The shared expert during the miss wait.** Qwen's shared expert does not

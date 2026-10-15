@@ -976,12 +976,288 @@ skips it; `MOE_WARMUP=1` keeps it. Cold page cache, no limit, then one 32-token 
 
 The first request does not pay it back, and the answer is the same with and without.
 
+## Results 20 — Qwen3.5-122B-A10B: three times RAM (2026-10-14)
+
+`unsloth/Qwen3.5-122B-A10B-GGUF`, `UD-IQ3_XXS`, 41.7 GiB (SHA256 `a40f83c5...`) on the 15.4 GB laptop,
+2.9x its RAM. Same arch as Qwen 3.6 (`qwen35moe`), so no new code: 48 MoE layers, 256 experts, top-8,
+~3 MiB per expert (147.4 MiB per slot across the layers), 4.8 GiB of dense weights. The chat template is
+byte-identical to Qwen 3.6's, so the prompt is `bench/prompts/qwen36-story.txt` (33 tokens). Harness as in
+Results 12, cold model file every run; scripts and results in `bench/results/linux/q122/`.
+
+**Bit-exact:** mmap and the cache give `cb186976ed6325cf` at 32 tokens; every budget run gives
+`bc56b655e50bacb7` at 128.
+
+| budget | mmap decode, 32 tokens | moe-stream decode, 128 tokens (2 rounds) | slots | read MB/token | wait ms/token |
+|---|---|---|---|---|---|
+| 8 GB | 0.21 (169660 majflt/tok) | 1.88, no stream prefill | 15 | 812 | 184 |
+| 10 GB | - | 2.02 / 2.04 | 19 | 729 | 152-157 |
+| 12 GB | - | **2.27 / 2.27** | 29 | 591 | 119 |
+| none | 0.34 (98232) | **2.27 / 2.27** (2.20 over 32 tokens) | 29 | 591 | 118 |
+
+Prompt: 79.5 s through mmap (0.4 tok/s), 11.5 s with stream prefill (2.9 tok/s). mmap at 10 and 12 GB was
+not run (4+ minutes each, and no limit already shows where it is).
+
+- **6.5x mmap with no limit** over the same 32 tokens (2.20 against 0.34 tok/s, 27 against 174 s wall),
+  ~9x at 8 GB (1.88 over 128 tokens against 0.21 over 32), 7x on the prompt. 0.5 major faults per token.
+- **8 GB is the floor.** There `auto` leaves 5 slots after the 1572 MiB of stream buffers, under the 8
+  one token needs, and refuses to start. Without stream prefill it gets 15 slots, but the prompt then goes
+  through mmap (80 s). 6 GB leaves 6 slots without buffers: no run.
+- **No limit is 12 GB here**: `auto` sees ~11 GB free on the desktop (MemAvailable less 15%), under the
+  12 GB limit, so both get 29 slots.
+- llama-server: ready in 5.4 s, chat at 2.1-2.2 tok/s.
+
+Where a token goes at 12 GB: 440 ms, of which 119 waiting for reads, so ~320 ms of compute; with no waits
+at all the ceiling is ~3.1 tok/s. The drive moves 591 MB per token, 1.34 GB/s averaged over the decode,
+and 8 I/O threads instead of 4 were slower (below), so it has no headroom: what helps is reading fewer
+bytes per token (more RAM for slots, a smaller quant), not more overlap.
+
+Tuning at 12 GB, one setting changed at a time, cold, 128 tokens (`tune.txt`):
+
+| change | decode tok/s | misses/token | prefetched/token | wait ms/token |
+|---|---|---|---|---|
+| defaults (depth 1, width 8, 4 I/O threads, LFU 8) | **2.27 / 2.26** | 36.7 | 146.9 | 119 |
+| prefetch off (depth 0) | 1.73 | 148.6 | 0 | 301 |
+| depth 2 | 2.16 | 31.6 | 182.3 | 126 |
+| width 12 | 1.90 | 18.7 | 250.4 | 174 |
+| width 16 | 1.46 | 13.3 | 370.8 | 309 |
+| 8 I/O threads | 2.20 | 36.7 | 146.9 | 135 |
+| LFU half-life 32 | 2.25 | 37.9 | 148.5 | 122 |
+| LRU | 2.21 | 38.5 | 154.1 | 127 |
+
+The defaults win. Prefetch is worth 31%: 147 guesses a token remove 112 misses, so 76% of them are used.
+Deeper or wider guessing removes more misses but reads more, and the drive has nothing to spare.
+`--prefetch-width` 4 and 6 are clamped to the 8 experts the model picks, so `tune-width4`/`width6`
+repeat the defaults.
+
+"Cheaper wrong guesses" (Next step options) was tried as an experimental patch and dropped: width below k
+(guess only the top 4 or 6), and `--prefetch-evict U`, where a guess may only evict a slot with at most U
+decayed uses. On the MTP file below at 12 GB (`mtpfile-tune.txt`): defaults 2.08 / 2.07, width 4 1.88,
+width 6 2.03, U = 0.5 1.61 (guesses find almost no slot, 0.6 a token), U = 1 2.07, U = 2 2.09.
+
+**MTP.** unsloth's `-MTP` GGUF keeps the multi-token-prediction head (`Qwen3.5-122B-A10B-MTP-UD-IQ3_XXS`,
+44.6 GiB, SHA256 `998a8924...`). It is a different quant: 155.1 MiB per slot, 23 slots at 12 GB, other
+tokens (`d9db02bd9c94b383`), 2.08 tok/s with MTP off. llama.cpp at the pin drafts with it
+(`--spec-type draft-mtp --spec-draft-n-max N`), and the draft context runs through the same eval callback,
+so the cache serves the MTP layer too (147 tensors, 21 slots). llama-server, 12 GB, cold, story and code
+prompts, 128 greedy tokens (`mtp/`):
+
+| draft tokens | story tok/s | accepted | code tok/s | accepted |
+|---|---|---|---|---|
+| off | **2.03** | - | **1.91** | - |
+| 1 | 1.56 | 67% | 1.71 | 94% |
+| 2 | 1.07 | 47% | 1.49 | 88% |
+| 3 | 0.93 | 36% | 1.58 | 87% |
+
+- **Slower at every setting, even at 94% accepted.** A verify batch of 2 tokens picks up to 16 experts a
+  layer instead of 8, and each one the cache does not hold is read from a drive that is already the limit.
+  Speculative decoding needs spare bandwidth, and streaming spends it all.
+- With 21 slots the cache takes batches of at most 2 tokens (a batch must not need more distinct experts
+  than there are slots), so the 3- and 4-token verify batches of N = 2 and 3 go through the stream-prefill
+  path instead. That is part of their drop; N = 1 is the clean case.
+- The code answer is the same as with MTP off; the story diverges at character 149 (batched verification
+  sums floats in another order, as in stock llama.cpp), and the three MTP runs agree with each other.
+
+Caveats: one prompt for the budgets, two rounds per cell; the MTP file is not the same quant as the
+budget runs; desktop session running.
+
+## Results 21 — Qwen3-Coder-Next: three times RAM at 3B active (2026-10-15)
+
+`unsloth/Qwen3-Coder-Next-GGUF`, `Q4_K_S`, 42.4 GiB (SHA256 `95e490dd...`), 3.0x RAM. Arch `qwen3next`
+(Qwen3-Next-80B-A3B): 48 MoE layers, 512 experts, top-10, ~1.7 MiB per expert (81.8 MiB per slot), and only
+848 MiB of dense weights, so `auto` takes 91 slots with no limit. The prefetcher gained the arch: it routes
+like `qwen35moe`, on `rms_norm(attn_residual) * attn_post_norm` (`expert_router.h`). This GGUF has no MTP
+head. Prompts rendered with its own template (`bench/prompts/coder-next-*.txt`); scripts and results in
+`bench/results/linux/coder-next/`.
+
+`bench/chat-prompt.py` now starts its server with `--no-warmup --no-repack`: llama.cpp's CPU repack tried
+to copy all 40 GB of this Q4_K_S file into RAM and failed, and the warm-up paged experts in for minutes.
+A template needs neither.
+
+**Bit-exact:** mmap and the cache give `9b68a279b1b599de` at 32 tokens, with no limit and at 8 GB.
+
+| budget | story | code |
+|---|---|---|
+| 6 GB | 3.84 | 2.97 |
+| 8 GB | 5.01 | 3.84 |
+| 10 GB | 5.98 | 4.48 |
+| 12 GB | 6.47 | 4.92 |
+| none | **6.62** (again: 6.46, 6.56) | **4.93** (4.91, 4.90) |
+
+Decode tok/s, 128 tokens, auto slots. mmap over 32 tokens: 1.30 with no limit (cache 5.77, 4.4x) and 0.70
+at 8 GB (4.49, 6.4x); the 28-token prompt takes 42 s through mmap, 5.5 s streamed.
+
+- **Code picks a much wider set of experts**: 30.5 misses and 41.7 late hits per token with no limit,
+  against 15.2 and 24.1 for the story, and 236 against 119 MB read. The drive gives ~1.2 GB/s at these
+  0.6 MB requests, so code decode is disk-bound: 4, 6 or 8 I/O threads give 4.91 / 4.88 / 4.81.
+- **The 15% margin costs ~9%.** With no cgroup limit `auto` takes MemAvailable after the context less 15%
+  of *total* RAM (2.3 GB), and stops at 91 slots. Set by hand: 110 slots 7.12 / 5.35 tok/s (story / code),
+  120 slots 7.15 / 5.55, where 5 major faults per token show the page cache running out.
+- Tuning with no limit, code (`tune.txt`): defaults 4.91 / 4.89; depth 2 4.84; width 14 4.33, width 20
+  3.10; 5 compute threads 4.97; stream prefill off (114 slots, the prompt through mmap in 58 s) 4.87.
+
+## Results 22 — Kimi-Linear-48B-A3B: cheap context (2026-10-15)
+
+`bartowski/moonshotai_Kimi-Linear-48B-A3B-Instruct-GGUF`, `Q4_K_M`, 28.0 GiB (`a1a7d865...`), 2.0x RAM.
+Arch `kimi-linear`: three Kimi Delta Attention (linear) layers per MLA layer, 26 MoE layers, 256 experts,
+top-8, sigmoid gating with a bias; ~3.8 MiB per expert (106.3 MiB per slot), 1224 MiB dense. **No code
+change**: the generic router path (`ffn_inp`, `ffn_norm`) fits. Results in `bench/results/linux/kimi-linear/`.
+
+**Bit-exact:** `e4bd5dac3abb3c60` at 32 tokens, mmap and cache, with no limit and at 8 GB.
+
+| budget | story | code |
+|---|---|---|
+| 6 GB | 2.81 | 2.69 |
+| 8 GB | 3.60 | 3.47 |
+| 10 GB | 4.24 | 4.09 |
+| 12 GB / none | **4.73** | **4.60 / 4.58** |
+
+mmap over 32 tokens: 0.80 with no limit (cache 4.12, 5.2x), 0.44 at 8 GB (3.20, 7.3x); prompt 50 s
+against 6.9 s.
+
+- Slower than Coder-Next at the same 3B active: experts twice the size, 1.44 MB requests. Code costs it
+  almost nothing (4.60 against 4.73).
+- **Context: 8.0 KiB per token** (only the MLA layers grow), against ~20 for Qwen 3.6. Inside 8 GB `auto`
+  leaves 37 / 33 / 29 / 19 slots at 16k / 64k / 128k / 256k (`context.txt`); 1M needs ~8 GB for the context
+  alone and is OOM-killed.
+- **A long prompt** (`kimi-linear-long.txt`: the first 30 KB of llama.cpp's `src/llama-context.cpp` at
+  `2f3fd0252`, summarise; 7726 tokens): 276 s to read (28 tok/s), then 4.25 tok/s with no limit and 3.26
+  at 8 GB, 10% under a short prompt. Stream prefill read 407 GB for it: each 512-token ubatch picks nearly
+  every expert of every layer and streams them again. The graph waited 46 s of the 276, so it is mostly
+  compute. `llama-moe-run` sends the prompt in one `llama_decode`, so prompts over 2048 tokens need `-b`.
+
+## Results 23 — Qwen3-Coder-30B-A3B: fast, and what the KV cache costs (2026-10-15)
+
+`unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF`, `Q4_K_M`, 17.3 GiB (`fadc3e5f...`), 1.2x RAM. Arch `qwen3moe`,
+no code change: 48 layers, 128 experts, top-8, 130.8 MiB per slot, 478 MiB dense, full attention in every
+layer, no thinking mode. Results in `bench/results/linux/qwen3-coder-30b/`.
+
+**Bit-exact:** `ebffc2d64823feb9` at 32 tokens, mmap and cache at 6 GB, 8 GB and with no limit.
+
+| budget | mmap, story | cache, story | | cache, code |
+|---|---|---|---|---|
+| 6 GB | 0.70 | 5.37 | 7.7x | 2.95 |
+| 8 GB | 1.73 | 9.28 | 5.4x | 4.55 |
+| 10 GB | 3.34 | 12.17 | 3.6x | 6.42 |
+| 12 GB | 6.50 | **13.37** | 2.1x | 7.85 |
+| none | 6.62 | 13.33 | 2.0x | **7.87** |
+
+128 tokens, mmap at every budget: at 1.2x RAM this is the closest race. With no limit 62 of each layer's
+128 experts fit. Code again reads a much wider set.
+
+**KV cache types.** Full attention costs ~96 KiB per token in f16, so context competes with the slots.
+`-fa on`, `-ctk` / `-ctv`, inside 8 GB (`kv.txt`, `kv2.txt`):
+
+| K / V | slots at 16k / 32k / 64k | story, 32k | code, 32k | 7853-token prompt: read / decode after |
+|---|---|---|---|---|
+| f16 / f16 | 35 / 23 / none | 6.39 | 3.34 | 256 s (30.7 tok/s) / 3.01 |
+| q8_0 / q8_0 | 41 / 34 / 22 | 9.50 | 4.51 | 664 s (11.8) / 3.33 |
+| q8_0 / q4_0 | - / 37 / - | **10.18** | **4.79** | 671 s (11.7) / 3.42 |
+| q4_0 / q4_0 | 43 / 40 / 33 | broken | | |
+
+- Quantized KV turns context memory into slots: +49% story and +35% code at 32k.
+- **But prompts read 2.6x slower**: CPU flash attention over a quantized cache is much slower than over
+  f16. For long pasted inputs f16 with a shorter context wins; for short prompts q8_0 / q4_0 does.
+- **q4_0 K breaks the model**: every run emitted one token (" a") and stopped. V takes 4 bits, K does not.
+- Open: several long or quantized runs start with an odd first token (": Here's...", " a Here is..."),
+  the rest coherent. The first token comes from the prefill logits, and prompts longer than one ubatch were
+  never checked against mmap (Results 17 went to 756 tokens). A check to make, not a finding.
+
+## Results 24 — North-Mini-Code-1.0: the next layer's experts, exactly (2026-10-15)
+
+`unsloth/North-Mini-Code-1.0-GGUF`, `UD-Q4_K_M`, 17.9 GiB (`d59f4cb3...`), 1.25x RAM. Cohere's 30B-A3B coder
+(June 2026), arch `cohere2moe`: 128 experts, top-8, sigmoid gating, sliding-window attention in three of four
+layers, 1548 MiB dense, 130.9 MiB per slot. Its template always opens a thinking block and adds a 130-token
+system prompt.
+
+The block is parallel: attention and the MoE both read `attn_norm(layer input)`. So the previous layer's
+output, `l_out`, normalised with the next layer's `attn_norm`, gives the next layer's routing **exactly**.
+`expert_router.h` hooks `l_out` for this arch (and does LayerNorm when the file asks for it; this one is
+RMS). **0.0 misses per token** at every budget: everything is prefetched, and what is left is lateness,
+since the read has one attention to hide in.
+
+**Bit-exact:** `78c81cd41d40dfd7` at 32 tokens, mmap and cache at 6 GB, 8 GB and with no limit.
+
+| budget | story | code | depth 2: story / code |
+|---|---|---|---|
+| 6 GB | 3.97 | 3.82 | |
+| 8 GB | 5.87 | 5.60 | **6.79 / 6.54** |
+| 10 GB | 7.72 | 7.40 | |
+| 12 GB | 8.62 | 8.48 | |
+| none | 8.69 | 8.51 | **9.35 / 8.96** |
+
+mmap over 32 tokens: 0.60 / 0.90 / 2.91 at 6 GB / 8 GB / none, against 3.54 / 5.37 / 7.91 (5.9x / 6.0x / 2.7x).
+
+- **Code costs nothing**: the misses that slow code on the other models are gone.
+- **Depth 2** (also guess two layers ahead, stale by one) gives the reads more lead: +5-17%, same tokens.
+  Depth 3, 8 GB, code: 6.17. The default stays 1; `MOE_PREFETCH_DEPTH=2` in the server.
+- Context ~26 KiB per token: 36 / 27 / 14 slots at 16k / 64k / 128k inside 8 GB; 256k does not fit.
+- Compute is higher than Qwen3-Coder-30B's (~88 against ~54 ms per token with no limit): three times the
+  dense weights.
+
+## Results 25 — Ornith-1.5-35B-A3B, and two models on a real task (2026-10-15)
+
+`ornith-ai/Ornith-1.5-35B-A3B-GGUF`, `Q4_K_M`, 20.2 GiB (`42739874...`), 1.4x RAM. Same arch as Qwen 3.6
+(`qwen35moe`), no code change: 72.7 MiB per slot, 115 slots with no limit. Its template takes
+`enable_thinking: false`, so the benchmark prompts answer directly. Results in `bench/results/linux/ornith/`.
+
+**Bit-exact:** `1579b829e8c5b0fa` at 32 tokens; mmap 2.09 against 7.92 with no limit (3.8x).
+
+| budget | story | code |
+|---|---|---|
+| 6 GB | 6.05 | **4.75** |
+| 8 GB | 7.53 | **6.00** |
+| 10 GB | 8.31 | 7.24 |
+| 12 GB | 8.99 | 8.03 |
+| none | **9.13** | 7.98 |
+
+256 small experts per layer (0.6 MB per tensor) keep more of what a token needs inside small budgets:
+the fastest code of these models at 6-8 GB.
+
+A real task through `llama-server` (no limit, thinking on, North at depth 2): one prompt for a single-file
+Python to-do CLI (numbered menu, JSON file next to the script, never crash on bad input), the program then
+run with scripted input:
+
+| | North-Mini-Code | Ornith-1.5 |
+|---|---|---|
+| tokens / time to the answer | 2782 / 7.0 min (6.98 tok/s) | 3892 / 9.2 min (7.17 tok/s) |
+| menu, bad input, persistence | all work | all work |
+| end of input (Ctrl+D) | loops forever (387642 error lines in 2 s) | exits and saves |
+| saving | only on quit or Ctrl+C | on every exit |
+| data file next to the script | no, the current folder | yes |
+| other | | `'²'.isdigit()` passes and `int()` fails: exits with a message |
+
+Over a few thousand tokens decode runs ~20% under the 128-token numbers as the context grows.
+
+**Results 20-25 together** (decode tok/s, story / code, 128 tokens):
+
+| model | file | x RAM | 8 GB | no limit |
+|---|---|---|---|---|
+| Qwen3.5-122B-A10B | 41.7 GiB | 2.9 | 1.88 / - (no stream prefill) | 2.27 / - |
+| Qwen3-Coder-Next | 42.4 GiB | 3.0 | 5.01 / 3.84 | 6.62 / 4.93 |
+| Kimi-Linear-48B-A3B | 28.0 GiB | 2.0 | 3.60 / 3.47 | 4.73 / 4.58 |
+| Qwen3-Coder-30B-A3B | 17.3 GiB | 1.2 | 9.28 / 4.55 | 13.33 / 7.87 |
+| North-Mini-Code-1.0, depth 2 | 17.9 GiB | 1.25 | 6.79 / 6.54 | 9.35 / 8.96 |
+| Ornith-1.5-35B-A3B | 20.2 GiB | 1.4 | 7.53 / 6.00 | 9.13 / 7.98 |
+
+Caveats: one machine, one or two runs per cell, desktop session running; quality is not measured beyond
+the one task, and the vendors' benchmark numbers that picked these models are not reproduced here.
+
 ## Next step options (updated)
 
 - **Bundled sidecar for Gemma 4** (needs ~9 GB of disk): one request per miss instead of two, which
   Results 8 measured at 1.5x on OLMoE. Decode still waits 46 ms/token on misses.
 - **Cheaper wrong guesses**: prefetch only into free or cold slots, or into a small separate pool, so a
-  mispredicted expert cannot evict a hot one; wrong guesses cost 30% more reads (Results 14).
+  mispredicted expert cannot evict a hot one; wrong guesses cost 30% more reads (Results 14). The
+  cold-slot version and narrower guesses gave nothing on the 122B (Results 20); not tried on Qwen 3.6.
+- **Stream buffers that fit small budgets**: the two buffers keep the 122B out of 8 GB with stream
+  prefill (Results 20). One buffer when two do not fit, or buffers sized for the picked experts only.
+- **A smaller margin with no limit**: `auto` keeps 15% of total RAM free and leaves ~9% of decode on the
+  table on Coder-Next (Results 21); a fixed 1 GB or 5% would take it, at the cost of headroom for other apps.
+- **Depth 2 for `cohere2moe` by default**: +5-17% on North-Mini-Code (Results 24).
+- **Long prompts stream the model once per ubatch**: 407 GB for 7.7k tokens on Kimi-Linear (Results 22).
+  A larger `-ub`, or keeping experts across ubatches of one prompt.
+- **Long prompts against mmap**: nothing past 756 tokens was checked for bit-exactness, and long runs
+  showed odd first tokens (Results 23).
 - **Server counters**: cache and stream stats per request in the server log.
 - **io_uring / IOCP**: misses are one job per tensor now (Results 14) and more threads did not help;
   async I/O would cut thread handoffs, not add bandwidth. Low priority.
@@ -1041,3 +1317,9 @@ The first request does not pay it back, and the answer is the same with and with
 - 2026-10-14 — Colibri 2.0.0 against moe-stream on Qwen 3.6 under the same budgets, through Colibri's HTTP
   benchmark, plus its Vulkan path on the iGPU (Results 18). Warm-up skipped with the cache: ready in 3 s
   instead of 16 (Results 19).
+- 2026-10-14 (later) — Qwen3.5-122B-A10B UD-IQ3_XXS (41.7 GiB, 2.9x RAM): bit-exact, 6.5x mmap's decode
+  with no limit; tuning, cold-slot prefetch and MTP drafting all slower than the defaults (Results 20).
+- 2026-10-15 — five more models, all bit-exact: Qwen3-Coder-Next (`qwen3next` router added, Results 21),
+  Kimi-Linear-48B-A3B (no change, 8 KiB of context per token, Results 22), Qwen3-Coder-30B-A3B (13.3 tok/s,
+  KV cache types, Results 23), North-Mini-Code-1.0 (`cohere2moe` router on `l_out`, exact next-layer routing,
+  Results 24) and Ornith-1.5-35B-A3B (Results 25). `chat-prompt.py` without warm-up and repack.

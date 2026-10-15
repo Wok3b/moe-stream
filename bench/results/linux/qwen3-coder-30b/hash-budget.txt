@@ -1,0 +1,30 @@
+infinity mmap exit 0 wall 48.0s
+    prefill 28 tokens in 38.27s (0.7 tok/s), 1937625 page faults (1873927 major)
+    decode 32 tokens in 8.59s (3.72 tok/s), 9606 page faults/token (9584.4 major)
+    tokens hash ebffc2d64823feb9, text:  The salt-stained wooden steps creaked beneath Elara's weathered boots as she climbed to the lighthouse's upper chamber. For thirty-seven years
+infinity sauto-stream exit 0 wall 8.7s
+    prefill 28 tokens in 4.78s (5.9 tok/s), 14206 page faults (1306 major)
+    decode 32 tokens in 2.89s (11.08 tok/s), 24 page faults/token (0.7 major)
+    cache: 7977 MiB, split layout, per token: hits 367.6, late hits 10.6, misses 6.1, prefetched 14.8, evictions 12.3, no-slot 0.0; read 61.4 MB/token in 62.8 requests (0.98 MB each), wait 27.8 ms/token, I/O 453 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 2624 predicted, 262 read late, 0 from slots; 8295 MB read, graph waited 2.05s in total; 2573 experts seeded into the slots in 1.78s
+    tokens hash ebffc2d64823feb9, text:  The salt-stained wooden steps creaked beneath Elara's weathered boots as she climbed to the lighthouse's upper chamber. For thirty-seven years
+8G mmap exit 0 wall 70.0s
+    prefill 28 tokens in 38.19s (0.7 tok/s), 1939190 page faults (1874598 major)
+    decode 32 tokens in 30.76s (1.04 tok/s), 36121 page faults/token (36074.3 major)
+    tokens hash ebffc2d64823feb9, text:  The salt-stained wooden steps creaked beneath Elara's weathered boots as she climbed to the lighthouse's upper chamber. For thirty-seven years
+8G sauto-stream exit 0 wall 10.1s
+    prefill 28 tokens in 4.80s (5.8 tok/s), 12811 page faults (1302 major)
+    decode 32 tokens in 4.27s (7.50 tok/s), 537 page faults/token (12.1 major)
+    cache: 4577 MiB, split layout, per token: hits 346.1, late hits 26.1, misses 12.0, prefetched 38.6, evictions 49.5, no-slot 0.0; read 147.7 MB/token in 151.8 requests (0.97 MB each), wait 59.2 ms/token, I/O 445 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 2624 predicted, 262 read late, 0 from slots; 8295 MB read, graph waited 2.69s in total; 1645 experts seeded into the slots in 1.14s
+    tokens hash ebffc2d64823feb9, text:  The salt-stained wooden steps creaked beneath Elara's weathered boots as she climbed to the lighthouse's upper chamber. For thirty-seven years
+6G mmap exit 0 wall 95.0s
+    prefill 28 tokens in 38.30s (0.7 tok/s), 1939963 page faults (1874923 major)
+    decode 32 tokens in 55.65s (0.58 tok/s), 69170 page faults/token (69090.7 major)
+    tokens hash ebffc2d64823feb9, text:  The salt-stained wooden steps creaked beneath Elara's weathered boots as she climbed to the lighthouse's upper chamber. For thirty-seven years
+6G sauto-stream exit 0 wall 12.5s
+    prefill 28 tokens in 4.78s (5.9 tok/s), 11596 page faults (1300 major)
+    decode 32 tokens in 6.73s (4.75 tok/s), 146 page faults/token (6.0 major)
+    cache: 2484 MiB, split layout, per token: hits 303.2, late hits 59.4, misses 21.7, prefetched 84.4, evictions 105.6, no-slot 0.0; read 308.8 MB/token in 318.5 requests (0.97 MB each), wait 123.0 ms/token, I/O 445 MB/s per thread
+    stream: 747 MiB buffers, 0 layers loaded whole, 1 partly; experts 2624 predicted, 262 read late, 0 from slots; 8295 MB read, graph waited 3.17s in total; 893 experts seeded into the slots in 0.62s
+    tokens hash ebffc2d64823feb9, text:  The salt-stained wooden steps creaked beneath Elara's weathered boots as she climbed to the lighthouse's upper chamber. For thirty-seven years

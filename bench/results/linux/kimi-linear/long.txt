@@ -1,0 +1,12 @@
+long infinity exit 0
+    prefill 7726 tokens in 275.76s (28.0 tok/s), 36546 page faults (3381 major)
+    decode 64 tokens in 15.07s (4.25 tok/s), 3 page faults/token (0.1 major)
+    cache: 7438 MiB, split layout, per token: hits 169.3, late hits 22.0, misses 16.8, prefetched 59.0, evictions 74.8, no-slot 0.0; read 327.0 MB/token in 227.7 requests (1.44 MB each), wait 95.8 ms/token, I/O 447 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 107 partly; experts 88119 predicted, 6921 read late, 695 from slots; 407313 MB read, graph waited 45.72s in total; 1750 experts seeded into the slots in 1.85s
+    tokens hash b39c9d2b41542645, text: - **Purpose**: Implements the core `llama_context` class that manages the full lifecycle of an LLM inference session, including memory allocation, backend initi
+long 8G exit 0
+    prefill 7726 tokens in 279.17s (27.7 tok/s), 32794 page faults (3244 major)
+    decode 64 tokens in 19.62s (3.26 tok/s), 163 page faults/token (8.3 major)
+    cache: 3931 MiB, split layout, per token: hits 149.2, late hits 34.0, misses 24.9, prefetched 86.9, evictions 111.2, no-slot 0.0; read 481.4 MB/token in 335.4 requests (1.44 MB each), wait 150.9 ms/token, I/O 447 MB/s per thread
+    stream: 2241 MiB buffers, 0 layers loaded whole, 116 partly; experts 88119 predicted, 7303 read late, 313 from slots; 408950 MB read, graph waited 42.77s in total; 925 experts seeded into the slots in 0.93s
+    tokens hash b39c9d2b41542645, text: - **Purpose**: Implements the core `llama_context` class that manages the full lifecycle of an LLM inference session, including memory allocation, backend initi
